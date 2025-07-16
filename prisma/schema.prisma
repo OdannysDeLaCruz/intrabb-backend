@@ -1,0 +1,477 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+  // output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  //directUrl = env("DIRECT_URL")
+}
+
+// -------------------------------------
+// Enum Definitions
+// -------------------------------------
+
+// Status for verifiable documents.
+enum DocumentStatus {
+  pending
+  approved
+  rejected
+
+  @@map("document_status")
+}
+
+// Type of user address.
+enum UserAddressType {
+  billing
+  shipping
+  home
+  office
+
+  @@map("user_address_type")
+}
+
+// Status for quotations.
+enum QuotationStatus {
+  pending
+  accepted
+  rejected
+
+  @@map("quotation_status")
+}
+
+// Status for service appointments.
+enum AppointmentStatus {
+  pending
+  confirmed
+  completed
+  cancelled
+  in_progress
+  rescheduled
+
+  @@map("order_status")
+}
+
+// Modality of a service appointment.
+enum Modality {
+  remote
+  in_person
+  hybrid
+
+  @@map("modality_type")
+}
+
+// Value type for category-specific parameters.
+enum CategoryParameterValueType {
+  text
+  number
+  boolean
+  select
+
+  @@map("category_parameter_type")
+}
+
+// Type of pricing for certain services.
+enum PricingType {
+  per_hour
+  per_day
+  per_job
+
+  @@map("pricing_type")
+}
+
+enum AvailabilityType {
+  immediate
+  next_day
+  in_days
+
+  @@map("availability_type")
+}
+
+// Describe el tipo de movimiento en una billetera.
+enum WalletTransactionType {
+  payment_received // Pago de un cliente por un servicio completado.
+  withdrawal       // Retiro de fondos del profesional a su banco.
+  refund           // Reembolso procesado.
+  top_up           // Recarga de saldo hecha por el profesional.
+  adjustment       // Ajuste manual hecho por un administrador.
+
+  @@map("wallet_transaction_type")
+}
+
+// Estado de una transacción de billetera.
+enum TransactionStatus {
+  pending
+  completed
+  failed
+  cancelled
+
+  @@map("transaction_status")
+}
+
+// Género del usuario.
+enum Gender {
+  male
+  female
+  other
+  prefer_not_to_say
+
+  @@map("gender")
+}
+
+// -------------------------------------
+// Models
+// -------------------------------------
+
+model Role {
+  id          Int @id @default(autoincrement())
+  name        String @unique
+  users       User[]
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  @@map("roles")
+}
+
+model DocumentType {
+  id                  Int @id @default(autoincrement())
+  name                String @unique
+  description         String?
+  verifiable_documents VerifiableDocument[]
+  created_at          DateTime @default(now()) 
+  updated_at          DateTime @updatedAt
+
+  @@map("document_types")
+}
+
+model User {
+  id                        String @id @db.Uuid
+  role_id                   Int
+  name                      String?
+  lastname                  String?
+  phone_number              String @unique
+  email                     String?
+  gender                    Gender?
+  password_hash             String?
+  username                  String? @unique
+  is_active                 Boolean @default(false)
+  is_online                 Boolean @default(false)
+  last_login                DateTime?
+  created_at                DateTime @default(now())
+  updated_at                DateTime @updatedAt
+
+  role                      Role @relation(fields: [role_id], references: [id])
+  addresses                 UserAddress[]
+  verification              UserVerification?
+  refresh_tokens            RefreshToken[]
+  verifiable_documents      VerifiableDocument[]
+  client_appointments       ServiceAppointment[] @relation("ClientAppointments")
+  professional_appointments ServiceAppointment[] @relation("ProfessionalAppointments")
+  reviews_given             Review[] @relation("ReviewerReviews")
+  service_requests          ServiceRequest[]
+  quotations                Quotations[]
+  intrabbler_profile        IntrabblerProfile?
+  wallet                    Wallet?
+
+  @@map("users")
+}
+
+model RefreshToken {
+  id          Int @id @default(autoincrement())
+  user_id     String @db.Uuid   
+  token       String @unique
+  expires_at  DateTime  
+  created_at  DateTime @default(now()) 
+  updated_at  DateTime @updatedAt
+  revoked_at  DateTime?
+
+  user User @relation(fields: [user_id], references: [id])
+
+  @@map("refresh_tokens")
+}
+
+model UserAddress {
+  id          Int @id @default(autoincrement())
+  user_id     String @db.Uuid             
+  address     String
+  city        String @default("Valledupar")
+  state       String @default("Cesar")
+  postal_code String?          
+  country     String @default("Colombia")
+  type        UserAddressType @default(home)
+  is_primary  Boolean @default(false)
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  user User @relation(fields: [user_id], references: [id])
+  service_requests ServiceRequest[]
+  service_appointments ServiceAppointment[] @relation("LocationAddress")
+
+  @@map("user_addresses")
+}
+
+model UserVerification {
+  id                     Int @id @default(autoincrement())
+  user_id                String @db.Uuid @unique
+  phone_verified         Boolean @default(false)
+  email_verified         Boolean @default(false)
+  phone_verified_at      DateTime? 
+  email_verified_at      DateTime? 
+  last_verification_sent DateTime?
+  created_at             DateTime @default(now()) 
+  updated_at             DateTime @updatedAt
+
+  user User @relation(fields: [user_id], references: [id])
+
+  @@map("user_verifications")
+}
+
+model IntrabblerProfile {
+  id            Int @id @default(autoincrement())
+  user_id       String @db.Uuid @unique
+  profession    String
+  bio           String?
+  rating_avg    Float @default(0)
+  total_reviews Int @default(0)
+  is_approved   Boolean @default(false)
+  created_at    DateTime @default(now()) 
+  updated_at    DateTime @updatedAt
+
+  user User @relation(fields: [user_id], references: [id])
+  verifiable_documents VerifiableDocument[]
+
+  @@map("intrabbler_profiles")
+}
+
+model VerifiableDocument {
+  id                    Int @id @default(autoincrement())
+  intrabbler_profile_id Int @unique
+  document_type_id      Int @unique 
+  document_url          String         
+  status                DocumentStatus @default(pending)
+  rejection_reason      String?        
+  submitted_at          DateTime @default(now()) 
+  reviewed_at           DateTime?      
+  reviewed_by_id        String @db.Uuid
+  expires_at            DateTime?      
+  created_at            DateTime @default(now()) 
+  updated_at            DateTime @updatedAt
+
+  intrabbler_profile    IntrabblerProfile @relation(fields: [intrabbler_profile_id], references: [id])
+  document_type         DocumentType @relation(fields: [document_type_id], references: [id])
+  reviewed_by           User @relation(fields: [reviewed_by_id], references: [id])
+
+  @@map("verifiable_documents")
+}
+
+model ServiceCategory {
+  id                 Int @id @default(autoincrement())
+  name               String
+  slug               String @unique
+  description        String?
+  is_active          Boolean @default(true)
+  icon_url           String?             
+  parent_id          Int?     
+  created_at         DateTime @default(now()) 
+  updated_at         DateTime @updatedAt           
+
+  parent             ServiceCategory? @relation("SubCategories", fields: [parent_id], references: [id])
+  children           ServiceCategory[] @relation("SubCategories")
+  category_parameters ServiceCategoryParameter[]
+  service_requests   ServiceRequest[]
+
+  @@map("service_categories")
+}
+
+model ServiceRequest {
+  id                    Int @id @default(autoincrement())
+  client_id             String @db.Uuid // debe tener role='client'
+  service_category_id   Int                  
+  title                 String
+  location_address_id   Int
+  description           String
+  preferred_date        DateTime?   
+  is_active             Boolean @default(true)
+  created_at            DateTime @default(now()) 
+  updated_at            DateTime @updatedAt
+
+  client                User @relation(fields: [client_id], references: [id])
+  service_category      ServiceCategory @relation(fields: [service_category_id], references: [id])
+  location              UserAddress @relation(fields: [location_address_id], references: [id])
+  parameters            ServiceRequestParameterValue[]
+  quotations            Quotations[]
+  appointment           ServiceAppointment? // puede tener entre cero y uno
+
+  @@map("service_requests")
+}
+
+model ServiceCategoryParameter {
+  id                  Int @id @default(autoincrement())
+  name                String
+  code                String @unique
+  parameter_type      CategoryParameterValueType
+  is_required         Boolean @default(false)
+  is_active           Boolean @default(true)
+  options_json        Json?
+  min_value           Float?
+  max_value           Float?
+  service_category_id Int
+  created_at          DateTime @default(now()) 
+  updated_at          DateTime @updatedAt
+
+  service_category    ServiceCategory @relation(fields: [service_category_id], references: [id])
+  request_parameters  ServiceRequestParameterValue[]
+
+  @@map("category_parameters")
+}
+
+model ServiceRequestParameterValue {
+  id                    Int @id @default(autoincrement())
+  service_request_id    Int
+  category_parameter_id Int
+  value_number          Float?
+  value_text            String?
+  value_boolean         Boolean?
+  created_at            DateTime @default(now()) 
+  updated_at            DateTime @updatedAt
+
+  service_request ServiceRequest @relation(fields: [service_request_id], references: [id])
+  category_parameter ServiceCategoryParameter @relation(fields: [category_parameter_id], references: [id])
+
+  @@map("request_parameter_values")
+}
+
+model EstimatedPricesQuotations {
+  id Int @id @default(autoincrement())
+  estimated_unit_quantity Float
+  estimated_unit_price Float
+  estimated_total Float // unit_quantity * unit_price
+  pricing_type PricingType
+  created_at DateTime @default(now()) 
+  updated_at DateTime @updatedAt
+  quotation Quotations?
+
+  @@map("estimated_prices_quotations")
+}
+
+model Quotations {
+  id Int @id @default(autoincrement())
+  message String
+  status QuotationStatus @default(pending)
+  submitted_at DateTime @default(now())
+  responded_at DateTime?
+  estimated_distance_km Float?
+  availability_type AvailabilityType
+  availability_in_days Int? @default(0)
+  service_request_id Int
+  intrabbler_id String @db.Uuid
+  estimated_price_id Int @unique
+  created_at DateTime @default(now()) 
+  updated_at DateTime @updatedAt
+
+  service_request ServiceRequest @relation(fields: [service_request_id], references: [id])
+  intrabbler User @relation(fields: [intrabbler_id], references: [id])
+  estimated_price EstimatedPricesQuotations @relation(fields: [estimated_price_id], references: [id])
+  service_appointment ServiceAppointment?
+
+  @@map("quotations")
+}
+
+model ServiceAppointment {
+  id                    Int @id @default(autoincrement())
+  appointment_date      DateTime
+  duration_minutes      Int @default(60)
+  status                AppointmentStatus @default(pending)
+  modality              Modality @default(in_person)
+  commission_percentage Float @default(0)
+  commission_amount     Float @default(0)
+  is_commission_paid    Boolean @default(false)
+  cancelation_reason    String?
+  cancelation_at        DateTime?
+  client_id             String @db.Uuid
+  intrabbler_id         String @db.Uuid
+  service_request_id    Int @unique
+  quotation_id          Int @unique
+  location_address_id   Int
+  created_at            DateTime @default(now()) 
+  updated_at            DateTime @updatedAt
+
+  client User @relation("ClientAppointments", fields: [client_id], references: [id])
+  intrabbler User @relation("ProfessionalAppointments", fields: [intrabbler_id], references: [id])
+  quotation Quotations @relation(fields: [quotation_id], references: [id])
+  location_address UserAddress @relation("LocationAddress", fields: [location_address_id], references: [id])
+  service_request ServiceRequest @relation(fields: [service_request_id], references: [id])
+  reviews Review[]
+  transactions WalletTransaction[]
+
+  @@map("service_appointments")
+}
+
+model Review {
+  id Int @id @default(autoincrement())
+  service_appointment_id Int
+  reviewer_id String @db.Uuid
+  rating Float
+  comment String?
+  created_at DateTime @default(now()) 
+  updated_at DateTime @updatedAt
+
+  service_appointment ServiceAppointment @relation(fields: [service_appointment_id], references: [id])
+  reviewer User @relation("ReviewerReviews", fields: [reviewer_id], references: [id]) // client or intrabbler
+
+  @@map("reviews")
+}
+
+model Wallet {
+  id            Int @id @default(autoincrement())
+  user_id       String @db.Uuid @unique
+  balance       Float @default(0)
+  currency      String @default("COP")
+  created_at    DateTime @default(now()) 
+  updated_at    DateTime @updatedAt
+
+  user          User @relation(fields: [user_id], references: [id])
+  transactions  WalletTransaction[]
+
+  @@map("wallets")
+}
+
+model PaymentMethod {
+  id          Int @id @default(autoincrement())
+  name        String
+  code        String @unique
+  description String?
+  created_at  DateTime @default(now()) 
+  updated_at  DateTime @updatedAt
+
+  transactions WalletTransaction[]
+
+  @@map("payment_methods")
+}
+
+model WalletTransaction {
+  id                  Int @id @default(autoincrement())
+  amount              Float @default(0)
+  type                WalletTransactionType
+  description         String?
+  status              TransactionStatus @default(pending)
+  transaction_id      String @unique
+  wallet_id           Int
+  payment_method_id   Int?
+  related_service_appointment_id Int?
+  created_at          DateTime @default(now()) 
+  updated_at          DateTime @updatedAt
+
+  wallet              Wallet @relation(fields: [wallet_id], references: [id])
+  payment_method      PaymentMethod? @relation(fields: [payment_method_id], references: [id], onDelete: Cascade)
+  related_service_appointment ServiceAppointment? @relation(fields: [related_service_appointment_id], references: [id], onDelete: Cascade)
+
+  @@map("wallet_transactions")
+}
