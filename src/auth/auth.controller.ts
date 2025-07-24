@@ -3,6 +3,7 @@ import { Body } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UseGuards } from '@nestjs/common';
+import { Public } from 'src/common/decorators';
 // import { JwtAuthGuard } from './guards/jwt-auth.guard';
 // import { Public } from 'src/common/decorators';
 // import { AuthGuard } from '@nestjs/passport';

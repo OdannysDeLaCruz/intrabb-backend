@@ -25,7 +25,7 @@ export class SupabaseAuthGuard implements CanActivate {
     const response = context.switchToHttp().getResponse<Response>();
 
     const user = await this.supabaseAuthService.getUser(request, response);
-    
+    console.log('USERRRRR', user);
     if (!user) {
       throw new UnauthorizedException();
     }

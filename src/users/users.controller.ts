@@ -2,6 +2,7 @@ import { Controller, Get, Post, Body, Patch, Param, Delete } from '@nestjs/commo
 import { UsersService } from './users.service';
 import { CreateUserDto } from '../auth/dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { CreateAddressDto } from './dto/create-address.dto';
 
 @Controller('users')
 export class UsersController {
@@ -23,12 +24,64 @@ export class UsersController {
   }
 
   @Patch(':id')
-  update(@Param('id') id: string, @Body() updateUserDto: UpdateUserDto) {
-    return this.usersService.update(+id, updateUserDto);
+  async update(@Param('id') id: string, @Body() updateUserDto: UpdateUserDto) {
+    try {
+      const user = await this.usersService.update(id, updateUserDto);
+      return {
+        success: true,
+        data: user,
+        message: 'User updated successfully'
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: 'Error updating user',
+        error: error.message
+      };
+    }
   }
 
   @Delete(':id')
   remove(@Param('id') id: string) {
     return this.usersService.remove(+id);
+  }
+
+  @Get(':id/addresses')
+  async getUserAddresses(@Param('id') id: string) {
+    try {
+      const addresses = await this.usersService.getUserAddresses(id);
+      return {
+        success: true,
+        data: addresses,
+        message: 'Addresses retrieved successfully'
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: 'Error retrieving addresses',
+        error: error.message
+      };
+    }
+  }
+
+  @Post(':id/addresses')
+  async saveUserAddress(
+    @Param('id') id: string,
+    @Body() createAddressDto: CreateAddressDto
+  ) {
+    try {
+      const address = await this.usersService.saveUserAddress(id, createAddressDto);
+      return {
+        success: true,
+        data: address,
+        message: 'Address saved successfully'
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: 'Error saving address',
+        error: error.message
+      };
+    }
   }
 }

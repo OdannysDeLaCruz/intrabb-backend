@@ -59,6 +59,16 @@ enum AppointmentStatus {
   @@map("order_status")
 }
 
+// Status for service requests.
+enum ServiceRequestStatus {
+  receiving_offers
+  offer_accepted
+  cancelled
+  completed
+
+  @@map("service_request_status")
+}
+
 // Modality of a service appointment.
 enum Modality {
   remote
@@ -207,6 +217,10 @@ model UserAddress {
   country     String @default("Colombia")
   type        UserAddressType @default(home)
   is_primary  Boolean @default(false)
+  latitude    Float?
+  longitude   Float?
+  label       String?
+  reference   String?
   created_at  DateTime @default(now())
   updated_at  DateTime @updatedAt
 
@@ -287,6 +301,10 @@ model ServiceCategory {
   category_parameters ServiceCategoryParameter[]
   service_requests   ServiceRequest[]
 
+  @@index([name])
+  @@index([is_active])
+  @@index([parent_id])
+  @@index([name, is_active])
   @@map("service_categories")
 }
 
@@ -298,6 +316,7 @@ model ServiceRequest {
   location_address_id   Int
   description           String
   preferred_date        DateTime?   
+  status                ServiceRequestStatus @default(receiving_offers)
   is_active             Boolean @default(true)
   created_at            DateTime @default(now()) 
   updated_at            DateTime @updatedAt

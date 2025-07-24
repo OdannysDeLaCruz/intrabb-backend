@@ -27,14 +27,27 @@ export class SupabaseAuthService {
   }
 
   async getUser(request: Request, response: Response) {
-    const supabase = this.createClient(request, response);
-    const { data: { user }, error } = await supabase.auth.getUser();
-    
-    if (error || !user) {
-      return null;
+    // Primero intentar con Authorization header (Bearer token)
+    const authHeader = request.headers.authorization;
+    if (authHeader?.startsWith('Bearer ')) {
+      const token = authHeader.substring(7);
+      const supabase = this.createClient(request, response);
+      const { data: { user }, error } = await supabase.auth.getUser(token);
+      
+      if (!error && user) {
+        return user;
+      }
     }
     
-    return user;
+    // Fallback a cookies para compatibilidad web
+    // const supabase = this.createClient(request, response);
+    // const { data: { user }, error } = await supabase.auth.getUser();
+    
+    // if (error || !user) {
+    //   return null;
+    // }
+    
+    // return user;
   }
 
   async getAccessToken(request: Request, response: Response) {

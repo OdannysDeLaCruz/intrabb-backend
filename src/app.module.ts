@@ -9,6 +9,8 @@ import { ConfigurationScheme } from './config/configuration.scheme';
 import { JwtModule } from '@nestjs/jwt';
 import { JwtStrategy } from './auth/passport_strategies/jwt.strategy';
 import { LoggerModule } from './common/logger/logger.module';
+import { CacheModule } from './cache/cache.module';
+import { ServiceRequestModule } from './service_request/service_request.module';
 
 @Module({
   imports: [
@@ -25,9 +27,11 @@ import { LoggerModule } from './common/logger/logger.module';
       global: true
     }),
     LoggerModule,
+    CacheModule,
     UsersModule,
     ServiceCategoriesModule,
-    AuthModule
+    AuthModule,
+    ServiceRequestModule
   ],
   controllers: [],
   providers: [
