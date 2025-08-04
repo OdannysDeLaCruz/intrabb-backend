@@ -1,13 +1,15 @@
-import { Controller, Get, Post, Body, Param, HttpException, HttpStatus, Patch } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, HttpException, HttpStatus, Patch, Query } from '@nestjs/common';
 import { ServiceRequestService } from './service_request.service';
 import { CreateServiceRequestDto } from './dto/create-service-request.dto';
 import { ServiceRequestStatus } from '@prisma/client';
+import { Public } from 'src/common/decorators';
 
-@Controller('service-request')
+@Controller('service-requests')
 export class ServiceRequestController {
   constructor(private readonly serviceRequestService: ServiceRequestService) {}
 
   @Post()
+  @Public()
   async create(@Body() createServiceRequestDto: CreateServiceRequestDto) {
     try {
       const serviceRequest = await this.serviceRequestService.create(createServiceRequestDto);
@@ -17,6 +19,7 @@ export class ServiceRequestController {
         message: 'Solicitud de servicio creada exitosamente'
       };
     } catch (error) {
+      console.log(error);
       throw new HttpException(
         {
           success: false,
@@ -61,14 +64,50 @@ export class ServiceRequestController {
   }
 
   @Get('client/:clientId')
-  async findByClientId(@Param('clientId') clientId: string) {
+  async findByClientId(
+    @Param('clientId') clientId: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string
+  ) {
     try {
-      const serviceRequests = await this.serviceRequestService.findByClientId(clientId);
+      const pageNumber = page ? parseInt(page, 10) : 1;
+      const limitNumber = limit ? parseInt(limit, 10) : 10;
+
+      // Validate pagination parameters
+      if (pageNumber < 1) {
+        throw new HttpException(
+          {
+            success: false,
+            message: 'El número de página debe ser mayor a 0'
+          },
+          HttpStatus.BAD_REQUEST
+        );
+      }
+
+      if (limitNumber < 1 || limitNumber > 50) {
+        throw new HttpException(
+          {
+            success: false,
+            message: 'El límite debe estar entre 1 y 50'
+          },
+          HttpStatus.BAD_REQUEST
+        );
+      }
+
+      const result = await this.serviceRequestService.findByClientId(
+        clientId, 
+        pageNumber, 
+        limitNumber
+      );
+      
       return {
         success: true,
-        data: serviceRequests
+        ...result
       };
     } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
       throw new HttpException(
         {
           success: false,

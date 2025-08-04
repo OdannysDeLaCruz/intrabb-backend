@@ -174,8 +174,29 @@ export class ServiceRequestService {
     });
   }
 
-  async findByClientId(clientId: string): Promise<ServiceRequest[]> {
-    return this.prisma.serviceRequest.findMany({
+  async findByClientId(
+    clientId: string, 
+    page: number = 1, 
+    limit: number = 10
+  ): Promise<{
+    data: ServiceRequest[];
+    meta: {
+      currentPage: number;
+      totalPages: number;
+      totalItems: number;
+      itemsPerPage: number;
+      hasNextPage: boolean;
+      hasPreviousPage: boolean;
+    };
+  }> {
+    const skip = (page - 1) * limit;
+
+    // Get total count for pagination metadata
+    const totalItems = await this.prisma.serviceRequest.count({
+      where: { client_id: clientId }
+    });
+
+    const data = await this.prisma.serviceRequest.findMany({
       where: { client_id: clientId },
       include: {
         client: {
@@ -220,8 +241,24 @@ export class ServiceRequestService {
       },
       orderBy: {
         created_at: 'desc'
-      }
+      },
+      skip,
+      take: limit
     });
+
+    const totalPages = Math.ceil(totalItems / limit);
+
+    return {
+      data,
+      meta: {
+        currentPage: page,
+        totalPages,
+        totalItems,
+        itemsPerPage: limit,
+        hasNextPage: page < totalPages,
+        hasPreviousPage: page > 1,
+      }
+    };
   }
 
   async updateStatus(id: number, status: ServiceRequestStatus): Promise<ServiceRequest> {
