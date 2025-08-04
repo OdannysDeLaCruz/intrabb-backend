@@ -21,9 +21,11 @@ datasource db {
 
 // Status for verifiable documents.
 enum DocumentStatus {
-  pending
-  approved
-  rejected
+  Pending
+  InReview
+  Approved
+  Declined
+  Abandoned
 
   @@map("document_status")
 }
@@ -134,6 +136,14 @@ enum Gender {
   prefer_not_to_say
 
   @@map("gender")
+}
+
+// Canal de verificación de documentos.
+enum VerificationChannel {
+  didit
+  manual
+
+  @@map("verification_channel")
 }
 
 // -------------------------------------
@@ -260,21 +270,24 @@ model IntrabblerProfile {
 
   user User @relation(fields: [user_id], references: [id])
   verifiable_documents VerifiableDocument[]
+  professional_services_offered ProfessionalServicesOffered[]
 
   @@map("intrabbler_profiles")
 }
 
 model VerifiableDocument {
   id                    Int @id @default(autoincrement())
-  intrabbler_profile_id Int @unique
+  intrabbler_profile_id Int
   document_type_id      Int @unique 
   document_url          String         
-  status                DocumentStatus @default(pending)
+  status                DocumentStatus @default(Pending)
   rejection_reason      String?        
   submitted_at          DateTime @default(now()) 
   reviewed_at           DateTime?      
   reviewed_by_id        String @db.Uuid
   expires_at            DateTime?      
+  verification_channel  VerificationChannel @default(manual)
+  didit_session_id      String?
   created_at            DateTime @default(now()) 
   updated_at            DateTime @updatedAt
 
@@ -300,6 +313,7 @@ model ServiceCategory {
   children           ServiceCategory[] @relation("SubCategories")
   category_parameters ServiceCategoryParameter[]
   service_requests   ServiceRequest[]
+  professional_services_offered ProfessionalServicesOffered[]
 
   @@index([name])
   @@index([is_active])
@@ -493,4 +507,17 @@ model WalletTransaction {
   related_service_appointment ServiceAppointment? @relation(fields: [related_service_appointment_id], references: [id], onDelete: Cascade)
 
   @@map("wallet_transactions")
+}
+
+
+model ProfessionalServicesOffered {
+  id Int @id @default(autoincrement())
+  intrabbler_profile_id Int
+  service_category_id Int
+  created_at          DateTime @default(now()) 
+
+  intrabbler_profile    IntrabblerProfile @relation(fields: [intrabbler_profile_id], references: [id])
+  service_category      ServiceCategory @relation(fields: [service_category_id], references: [id])
+
+@@map("professional_services_offered")
 }
