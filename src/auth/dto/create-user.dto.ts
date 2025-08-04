@@ -2,7 +2,7 @@ import { IsNotEmpty, IsUUID } from "class-validator";
 
 export class CreateUserDto {
   @IsNotEmpty()
-  @IsUUID()
+  // @IsUUID()
   supabase_user_id: string;
 
   @IsNotEmpty()

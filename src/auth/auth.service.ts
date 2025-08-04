@@ -16,6 +16,7 @@ export class AuthService {
         phone_number: phone
       }
     })
+    console.log('user', user)
     return { user }
   }
 
@@ -46,11 +47,13 @@ export class AuthService {
     }
   }
 
-  async getCurrentUser(userId: string) {
+  async getCurrentUser(userId: string, platform?: string) {
     try {
+      const includeConfig = this.getIncludeConfig(platform)
+      
       const user = await this.prisma.user.findUnique({
         where: { id: userId },
-        include: { wallet: true }
+        include: includeConfig
       })
 
       if (!user) {
@@ -83,10 +86,47 @@ export class AuthService {
     }
   }
 
-  async signUpOrSignIn(createUserDto: CreateUserDto) {
+  private getIncludeConfig(platform?: string) {
+    const baseIncludes = { 
+      wallet: true,
+      role: true 
+    }
+    
+    switch (platform) {
+      case 'aliados':
+        return {
+          ...baseIncludes,
+          intrabbler_profile: {
+            include: {
+              verifiable_documents: {
+                include: {
+                  document_type: true
+                }
+              }
+            }
+          }
+        }
+      case 'client':
+      default:
+        return baseIncludes
+    }
+  }
+
+  private getRoleByPlatform(platform?: string): number {
+    switch (platform) {
+      case 'aliados':
+        return this.role_professional_id;
+      case 'client':
+      default:
+        return this.role_client_id;
+    }
+  }
+
+  async signUpOrSignIn(createUserDto: CreateUserDto, platform?: string) {
     try {
       // Verificar si existe el phone_number
       const { user } = await this.getUserByPhone(createUserDto.phone_number)
+      console.log('user::', user)
       if (user) {
         // Usuario registrado, iniciar sesión
         return {
@@ -104,17 +144,29 @@ export class AuthService {
     }
 
     try {
+      // Determinar rol según plataforma
+      const roleId = this.getRoleByPlatform(platform);
+      
       const newUser = await this.prisma.user.create({
         data: {
           id: createUserDto.supabase_user_id,
           phone_number: createUserDto.phone_number,
-          role_id: this.role_client_id,
+          role_id: roleId,
           last_login: new Date(),
           is_online: true,
           is_active: true,
           wallet: {
             create: {}
-          }
+          },
+          // Crear perfil intrabbler si es aliados
+          ...(platform === 'aliados' && {
+            intrabbler_profile: {
+              create: {
+                profession: 'Por definir',
+                bio: ''
+              }
+            }
+          })
         }
       })
 
@@ -124,6 +176,7 @@ export class AuthService {
         user: newUser,
       }
     } catch (error) {
+      console.log('error', error)
       if (error instanceof PrismaClientKnownRequestError) {
         if (error.name === 'PrismaClientKnownRequestError') {
           console.log('PrismaClientKnownRequestError name')

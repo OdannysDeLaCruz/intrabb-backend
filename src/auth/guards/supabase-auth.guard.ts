@@ -3,6 +3,7 @@ import { Reflector } from '@nestjs/core';
 import { Request, Response } from 'express';
 import { SupabaseAuthService } from '../supabase-auth.service';
 import { IS_PUBLIC_KEY } from '../../common/decorators/public.decorator';
+import { User } from '@prisma/client';
 
 @Injectable()
 export class SupabaseAuthGuard implements CanActivate {
@@ -25,13 +26,13 @@ export class SupabaseAuthGuard implements CanActivate {
     const response = context.switchToHttp().getResponse<Response>();
 
     const user = await this.supabaseAuthService.getUser(request, response);
-    console.log('USERRRRR', user);
+    // console.log('USERRRRR', user);
     if (!user) {
       throw new UnauthorizedException();
     }
 
     // Attach user to request for use in controllers
-    request.user = user;
+    request.user = user as { id: string };
     return true;
   }
 }

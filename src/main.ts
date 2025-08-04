@@ -1,29 +1,44 @@
 import { NestFactory } from '@nestjs/core';
-import { AppModule } from './app.module';
 import { ValidationPipe, VersioningType } from '@nestjs/common';
 import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
 import cookieParser from 'cookie-parser';
 import morgan from 'morgan';
+// import { json } from 'express';
+import express, { raw } from 'express';
+import { AppModule } from './app.module';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
-  
+  const app = await NestFactory.create(AppModule, {
+    bodyParser: false
+  });
+
+  // const jsonMiddleware = express.json();
+
+  // app.use((req, res, next) => {
+  //   console.log('Request URL:', req.path, req.path.includes('/webhooks/didit'));
+  //   if (req.path.includes('/webhooks/didit')) {
+  //     next(); // Salta el parser de JSON para la ruta del webhook
+  //   } else {
+  //     express.json()(req, res, next); // Usa el parser de JSON para el resto
+  //   }
+  // });
+
+  // app.use('/api/v1/verifiable_documents/notifications/webhooks/didit', raw({ type: '*/*' }));
+  app.use(
+  express.json({
+    verify: (req: any, res, buf, encoding) => {
+      if (buf && buf.length) {
+        // Store the raw body in the request object
+        req.rawBody = buf.toString((encoding as BufferEncoding) || "utf8");
+      }
+    },
+  })
+);
+  app.use(express.json());
   // Use Winston logger
   app.useLogger(app.get(WINSTON_MODULE_NEST_PROVIDER));
   app.enableCors({
-    origin: [
-      'http://localhost:3000',     // Frontend web
-      'http://localhost',          // App móvil Capacitor
-      'http://10.0.2.2:3000',     // Emulador Android
-      'capacitor://localhost',     // Protocolo de Capacitor
-      'ionic://localhost',         // Protocolo de Ionic
-      'http://localhost:8080',     // Posible puerto de desarrollo
-      'http://127.0.0.1:3000',     // Localhost alternativo
-      'http://localhost:8081',     // Localhost expo
-      'http://10.0.2.2:8081',     // Localhost expo
-      'http://192.168.1.36:8081', // IP local para dispositivos físicos
-      'exp://192.168.1.36:8081',  // Expo URL para dispositivos físicos
-    ],
+    origin: '*',
     credentials: true
   });
 
@@ -59,9 +74,9 @@ async function bootstrap() {
   //   configService.get('JWT_REFRESH_EXPIRES_IN')
   // );
 
+
   await app.listen(port, '0.0.0.0', () => {
     console.log(`Server running on http://localhost:${port}`);
-    console.log(`Server accessible from emulator on http://10.0.2.2:${port}`);
   });
 }
 bootstrap();

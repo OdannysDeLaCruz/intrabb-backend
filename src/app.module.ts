@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, MiddlewareConsumer, RequestMethod } from '@nestjs/common';
 import { UsersModule } from './users/users.module';
 import { ServiceCategoriesModule } from './service_categories/service_categories.module';
 import { PrismaService } from './prisma/prisma.service';
@@ -11,6 +11,10 @@ import { JwtStrategy } from './auth/passport_strategies/jwt.strategy';
 import { LoggerModule } from './common/logger/logger.module';
 import { CacheModule } from './cache/cache.module';
 import { ServiceRequestModule } from './service_request/service_request.module';
+import { VerifiableDocumentsModule } from './verifiable_documents/verifiable_documents.module';
+import { IntrabblersModule } from './intrabblers/intrabblers.module';
+import { PlatformMiddleware } from './common/middleware/platform.middleware';
+import { WebhookRawBodyMiddleware } from './common/middleware/webhook-raw-body.middleware';
 
 @Module({
   imports: [
@@ -31,7 +35,9 @@ import { ServiceRequestModule } from './service_request/service_request.module';
     UsersModule,
     ServiceCategoriesModule,
     AuthModule,
-    ServiceRequestModule
+    ServiceRequestModule,
+    VerifiableDocumentsModule,
+    IntrabblersModule
   ],
   controllers: [],
   providers: [
@@ -39,4 +45,15 @@ import { ServiceRequestModule } from './service_request/service_request.module';
     JwtStrategy
   ],
 })
-export class AppModule {}
+export class AppModule {
+  configure(consumer: MiddlewareConsumer) {
+    // Apply webhook middleware FIRST (before body parsing)
+    // consumer
+    //   .apply(WebhookRawBodyMiddleware)
+    //   .forRoutes('*');
+    
+    consumer
+      .apply(PlatformMiddleware)
+      .forRoutes('*'); // Aplicar a todas las rutas
+  }
+}
