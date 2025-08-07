@@ -89,7 +89,11 @@ export class CacheService implements OnModuleInit, OnModuleDestroy {
     }
 
     try {
-      await this.client.setEx(key, ttlSeconds, JSON.stringify(value));
+      if (ttlSeconds > 0) {
+        await this.client.setEx(key, ttlSeconds, JSON.stringify(value));
+      } else {
+        await this.client.set(key, JSON.stringify(value));
+      }
     } catch (error) {
       this.logger.error(`Failed to set key ${key}`, error);
     }
