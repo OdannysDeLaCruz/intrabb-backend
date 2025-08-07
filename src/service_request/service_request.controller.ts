@@ -31,6 +31,65 @@ export class ServiceRequestController {
     }
   }
 
+  @Get('availables')
+  async findAvailableOpportunities(
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+    @Query('categoryId') categoryId?: string,
+    @Query('location') location?: string
+  ) {
+    try {
+      const pageNumber = page ? parseInt(page, 10) : 1;
+      const limitNumber = limit ? parseInt(limit, 10) : 10;
+      const categoryIdNumber = categoryId ? parseInt(categoryId, 10) : undefined;
+
+      // Validate pagination parameters
+      if (pageNumber < 1) {
+        throw new HttpException(
+          {
+            success: false,
+            message: 'El número de página debe ser mayor a 0'
+          },
+          HttpStatus.BAD_REQUEST
+        );
+      }
+
+      if (limitNumber < 1 || limitNumber > 50) {
+        throw new HttpException(
+          {
+            success: false,
+            message: 'El límite debe estar entre 1 y 50'
+          },
+          HttpStatus.BAD_REQUEST
+        );
+      }
+
+      const result = await this.serviceRequestService.findAvailableOpportunities(
+        pageNumber,
+        limitNumber,
+        categoryIdNumber,
+        location
+      );
+
+      return {
+        success: true,
+        ...result
+      };
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      throw new HttpException(
+        {
+          success: false,
+          message: 'Error al obtener las oportunidades disponibles',
+          error: error.message
+        },
+        HttpStatus.INTERNAL_SERVER_ERROR
+      );
+    }
+  }
+
   @Get(':id')
   async findOne(@Param('id') id: string) {
     try {

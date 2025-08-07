@@ -15,6 +15,7 @@ import { VerifiableDocumentsModule } from './verifiable_documents/verifiable_doc
 import { IntrabblersModule } from './intrabblers/intrabblers.module';
 import { PlatformMiddleware } from './common/middleware/platform.middleware';
 import { WebhookRawBodyMiddleware } from './common/middleware/webhook-raw-body.middleware';
+import { AppGateway } from './app/app.gateway';
 
 @Module({
   imports: [
@@ -42,7 +43,8 @@ import { WebhookRawBodyMiddleware } from './common/middleware/webhook-raw-body.m
   controllers: [],
   providers: [
     PrismaService,
-    JwtStrategy
+    JwtStrategy,
+    AppGateway
   ],
 })
 export class AppModule {
