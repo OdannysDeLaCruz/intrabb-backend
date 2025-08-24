@@ -21,8 +21,72 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect {
     return 'Hello world!';
   }
 
+  @SubscribeMessage('join_request_room')
+  async handleJoinRequestRoom(client: Socket, payload: { requestId: number }) {
+    try {
+      const { requestId } = payload;
+      const userId = client['user']?.id;
+      
+      if (!userId || !requestId) {
+        client.emit('error', { message: 'Invalid request data' });
+        return;
+      }
+
+      const roomName = `request-${requestId}`;
+      
+      // Join the client to the request room
+      await client.join(roomName);
+      
+      // Store in Redis that this user is watching this request
+      await this.cacheService.set(
+        `watching_request:${requestId}:${userId}`, 
+        {
+          socketId: client.id,
+          joinedAt: new Date().toISOString(),
+          userInfo: client['user']
+        },
+        3600 // 1 hour expiry
+      );
+      
+      console.log(`📺 Usuario ${userId} se unió a la sala de solicitud ${requestId}`);
+      client.emit('joined_request_room', { requestId, roomName });
+      
+    } catch (error) {
+      console.error('Error joining request room:', error);
+      client.emit('error', { message: 'Failed to join request room' });
+    }
+  }
+
+  @SubscribeMessage('leave_request_room')
+  async handleLeaveRequestRoom(client: Socket, payload: { requestId: number }) {
+    try {
+      const { requestId } = payload;
+      const userId = client['user']?.id;
+      
+      if (!userId || !requestId) {
+        return;
+      }
+
+      const roomName = `request-${requestId}`;
+      
+      // Leave the room
+      await client.leave(roomName);
+      
+      // Remove from Redis
+      await this.cacheService.del(`watching_request:${requestId}:${userId}`);
+      
+      console.log(`📺 Usuario ${userId} salió de la sala de solicitud ${requestId}`);
+      client.emit('left_request_room', { requestId, roomName });
+      
+    } catch (error) {
+      console.error('Error leaving request room:', error);
+    }
+  }
+
   async handleConnection(client: Socket, ...args: any[]) {
     try {
+      console.log('🔌 Nueva conexión WebSocket recibida:', client.id);
+      
       // Validate token and set user data
       const token = client.handshake.auth.token;
       
@@ -31,6 +95,8 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect {
         client.disconnect();
         return;
       }
+      
+      console.log('🔑 Token recibido, verificando...');
 
       // Create Supabase client for token verification
       const { createServerClient } = await import('@supabase/ssr');
@@ -50,9 +116,12 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
       if (error || !user) {
         console.log('❌ Conexión rechazada: Invalid token');
+        console.log('❌ Error de Supabase:', error?.message);
         client.disconnect();
         return;
       }
+      
+      console.log('✅ Token válido para usuario:', user.id);
 
       // Attach user information to the socket
       client['user'] = {
@@ -122,6 +191,42 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
     console.log(`⚠️ Aliado ${aliadoId} no está online para recibir: ${event}`);
     return false;
+  }
+
+  // Método para notificar a todos los usuarios que están viendo una solicitud específica
+  async notifyRequestRoom(requestId: number, event: string, data: any) {
+    const roomName = `request-${requestId}`;
+    this.server.to(roomName).emit(event, data);
+    console.log(`🔔 Notificación enviada a la sala de solicitud ${requestId}: ${event}`);
+    return true;
+  }
+
+  // Método para obtener todos los usuarios que están viendo una solicitud
+  async getWatchingUsers(requestId: number): Promise<string[]> {
+    const keys = await this.cacheService.keys(`watching_request:${requestId}:*`);
+    return keys.map(key => {
+      const parts = key.split(':');
+      return parts[parts.length - 1]; // Return user ID
+    });
+  }
+
+  // Método específico para notificar nueva cotización
+  async notifyNewQuotation(requestId: number, quotationData: any) {
+    return this.notifyRequestRoom(requestId, 'nueva_cotizacion', quotationData);
+  }
+
+  // Método específico para notificar al aliado que su cotización fue aceptada
+  async notifyQuotationAcceptedToIntrabbler(intrabberId: string, notificationData: any) {
+    return this.notifyAliado(intrabberId, 'cotizacion_aceptada', notificationData);
+  }
+
+  // Método de prueba para verificar conectividad
+  async testNotification(intrabberId: string) {
+    const testData = {
+      message: 'Esta es una notificación de prueba',
+      timestamp: new Date().toISOString(),
+    };
+    return this.notifyAliado(intrabberId, 'test_notification', testData);
   }
 
 }
