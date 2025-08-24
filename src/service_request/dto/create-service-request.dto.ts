@@ -1,5 +1,6 @@
-import { IsNotEmpty, IsString, IsOptional, IsInt, IsDateString, IsArray, ValidateNested } from 'class-validator';
+import { IsNotEmpty, IsString, IsOptional, IsInt, IsDateString, IsArray, ValidateNested, IsNumber, IsEnum } from 'class-validator';
 import { Type } from 'class-transformer';
+import { PricingType } from '@prisma/client';
 
 export class CreateServiceRequestParameterDto {
   @IsInt()
@@ -15,6 +16,28 @@ export class CreateServiceRequestParameterDto {
 
   @IsOptional()
   value_boolean?: boolean;
+}
+
+export class CreateInitialBudgetDto {
+  @IsNumber()
+  @IsNotEmpty()
+  budget_unit_quantity: number;
+
+  @IsNumber()
+  @IsNotEmpty()
+  budget_unit_price: number;
+
+  @IsNumber()
+  @IsNotEmpty()
+  budget_total: number;
+
+  @IsEnum(PricingType)
+  @IsNotEmpty()
+  pricing_type: PricingType;
+
+  @IsOptional()
+  @IsNumber()
+  additional_costs?: number;
 }
 
 
@@ -48,4 +71,9 @@ export class CreateServiceRequestDto {
   @ValidateNested({ each: true })
   @Type(() => CreateServiceRequestParameterDto)
   parameters?: CreateServiceRequestParameterDto[];
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => CreateInitialBudgetDto)
+  initial_budget?: CreateInitialBudgetDto;
 }

@@ -91,6 +91,7 @@ export class ServiceRequestController {
   }
 
   @Get(':id')
+  @Public()
   async findOne(@Param('id') id: string) {
     try {
       const serviceRequest = await this.serviceRequestService.findOne(+id);
@@ -103,11 +104,14 @@ export class ServiceRequestController {
           HttpStatus.NOT_FOUND
         );
       }
+
+      console.log("SERVICE REQUEST - BACKEND", serviceRequest);
       return {
         success: true,
         data: serviceRequest
       };
     } catch (error) {
+      console.log(error);
       if (error instanceof HttpException) {
         throw error;
       }

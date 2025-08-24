@@ -84,4 +84,58 @@ export class UsersController {
       };
     }
   }
+
+  @Get(':id/quotations')
+  async getUserQuotations(@Param('id') id: string) {
+    try {
+      const quotations = await this.usersService.getUserQuotations(id);
+      return {
+        success: true,
+        data: quotations,
+        message: 'Quotations retrieved successfully'
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: 'Error retrieving quotations',
+        error: error.message
+      };
+    }
+  }
+
+  @Get(':id/appointments')
+  async getUserAppointments(@Param('id') id: string) {
+    try {
+      const appointments = await this.usersService.getUserAppointments(id);
+      return {
+        success: true,
+        data: appointments,
+        message: 'Appointments retrieved successfully'
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: 'Error retrieving appointments',
+        error: error.message
+      };
+    }
+  }
+
+  @Get(':id/appointments/:appointmentId')
+  async getAppointmentDetail(@Param('id') id: string, @Param('appointmentId') appointmentId: string) {
+    try {
+      const appointment = await this.usersService.getAppointmentDetail(id, appointmentId);
+      return {
+        success: true,
+        data: appointment,
+        message: 'Appointment detail retrieved successfully'
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: 'Error retrieving appointment detail',
+        error: error.message
+      };
+    }
+  }
 }

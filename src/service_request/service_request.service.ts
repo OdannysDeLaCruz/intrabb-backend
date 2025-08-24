@@ -12,7 +12,7 @@ export class ServiceRequestService {
   ) {}
 
   async create(createServiceRequestDto: CreateServiceRequestDto): Promise<ServiceRequest> {
-    const { parameters, ...serviceRequestData } = createServiceRequestDto;
+    const { parameters, initial_budget, ...serviceRequestData } = createServiceRequestDto;
 
     // Validate preferred_date if provided
     if (serviceRequestData.preferred_date) {
@@ -29,19 +29,34 @@ export class ServiceRequestService {
       }
     }
 
-    return this.prisma.$transaction(async (prisma) => {
-      // Verify that the address exists and belongs to the client
-      const existingAddress = await prisma.userAddress.findFirst({
-        where: {
-          id: serviceRequestData.location_address_id,
-          user_id: serviceRequestData.client_id,
-        },
-      });
+    // Verify that the address exists and belongs to the client
+    const existingAddress = await this.prisma.userAddress.findFirst({
+      where: {
+        id: serviceRequestData.location_address_id,
+        user_id: serviceRequestData.client_id,
+      },
+    });
 
-      if (!existingAddress) {
-        throw new BadRequestException(
-          'La dirección seleccionada no existe o no pertenece al usuario'
-        );
+    if (!existingAddress) {
+      throw new BadRequestException(
+        'La dirección seleccionada no existe o no pertenece al usuario'
+      );
+    }
+
+    const result = await this.prisma.$transaction(async (prisma) => {
+      // Create initial budget if provided
+      let initialBudgetId = null;
+      if (initial_budget) {
+        const createdBudget = await prisma.initialBudget.create({
+          data: {
+            budget_unit_quantity: initial_budget.budget_unit_quantity,
+            budget_unit_price: initial_budget.budget_unit_price,
+            budget_total: initial_budget.budget_total,
+            pricing_type: initial_budget.pricing_type,
+            additional_costs: initial_budget.additional_costs || 0,
+          }
+        });
+        initialBudgetId = createdBudget.id;
       }
 
       // Create the service request with the existing address ID
@@ -51,6 +66,7 @@ export class ServiceRequestService {
           preferred_date: serviceRequestData.preferred_date 
             ? new Date(serviceRequestData.preferred_date) 
             : undefined,
+          initial_budget_id: initialBudgetId,
           parameters: parameters ? {
             create: parameters.map(param => ({
               category_parameter_id: param.category_parameter_id,
@@ -111,21 +127,26 @@ export class ServiceRequestService {
               },
               estimated_price: true,
             }
-          }
+          },
+          initial_budget: true
         }
       });
 
-      // 🚀 NUEVA LÓGICA: Notificar a aliados en tiempo real
-      // Obtener la solicitud completa con todas las relaciones para la notificación
-      console.log('serviceRequest', serviceRequest)
-      const completeServiceRequest = await this.findOne(serviceRequest.id);
-      console.log('completeServiceRequest', completeServiceRequest)
-      if (serviceRequest) {
-        await this.notifyAliadosOfNewRequest(serviceRequest);
-      }
-
-      return serviceRequest;
+      
+      return { serviceRequest };
     });
+    
+    // 🚀 NUEVA LÓGICA: Notificar a aliados en tiempo real
+    // Obtener la solicitud completa con todas las relaciones para la notificación
+    console.log('serviceRequest', result.serviceRequest)
+    const completeServiceRequest = await this.findOne(result.serviceRequest.id);
+    console.log('completeServiceRequest', completeServiceRequest)
+    if (result.serviceRequest) {
+      await this.notifyAliadosOfNewRequest(result.serviceRequest);
+    }
+
+    return result.serviceRequest;
+
   }
 
   /**
@@ -168,6 +189,7 @@ export class ServiceRequestService {
         _count: {
           quotations: serviceRequest.quotations?.length || 0,
         },
+        initial_budget: serviceRequest.initial_budget,
       };
       console.log('notificationData', notificationData)
       // Enviar notificación a todos los aliados online
@@ -196,12 +218,15 @@ export class ServiceRequestService {
       where: { id },
       include: {
         client: {
-          select: {
-            id: true,
-            name: true,
-            lastname: true,
-            phone_number: true,
-            email: true,
+          // select: {
+          //   id: true,
+          //   name: true,
+          //   lastname: true,
+          //   phone_number: true,
+          //   email: true,
+          // },
+          include: {
+            reviews_given: true,
           }
         },
         service_category: {
@@ -244,8 +269,15 @@ export class ServiceRequestService {
               }
             },
             estimated_price: true,
+            service_request: {
+              select: {
+                id: true,
+              }
+            }
           }
-        }
+        },
+        appointment: true,
+        initial_budget: true
       }
     });
   }
@@ -313,7 +345,9 @@ export class ServiceRequestService {
             },
             estimated_price: true,
           }
-        }
+        },
+        appointment: true,
+        initial_budget: true
       },
       orderBy: {
         created_at: 'desc'
@@ -445,6 +479,16 @@ export class ServiceRequestService {
               }
             }
           },
+          initial_budget: {
+            select: {
+              id: true,
+              budget_unit_quantity: true,
+              budget_unit_price: true,
+              budget_total: true,
+              pricing_type: true,
+              additional_costs: true
+            }
+          },
           // Incluir el conteo de cotizaciones existentes (útil para mostrar competencia)
           _count: {
             select: {
@@ -520,7 +564,8 @@ export class ServiceRequestService {
             },
             estimated_price: true,
           }
-        }
+        },
+        initial_budget: true
       }
     });
   }

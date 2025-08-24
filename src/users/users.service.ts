@@ -122,4 +122,285 @@ export class UsersService {
       }
     });
   }
+
+  async getUserQuotations(intrabblerId: string) {
+    return this.prisma.quotations.findMany({
+      where: {
+        intrabbler_id: intrabblerId
+      },
+      select: {
+        id: true,
+        message: true,
+        status: true,
+        submitted_at: true,
+        responded_at: true,
+        estimated_distance_km: true,
+        availability_type: true,
+        availability_in_days: true,
+        service_request_id: true, 
+        estimated_price_id: true,
+        created_at: true,
+        updated_at: true,
+        service_request: {
+          select: {
+            id: true,
+            title: true,
+            description: true,
+            status: true,
+            created_at: true,
+            updated_at: true
+          }
+        },
+        estimated_price: {
+          select: {
+            id: true,
+            estimated_unit_quantity: true,
+            estimated_unit_price: true,
+            estimated_total: true,
+            pricing_type: true,
+            created_at: true,
+            updated_at: true
+          }
+        },
+        service_appointment: true
+      }
+    });
+  }
+
+  async getUserAppointments(clientId: string) {
+    return this.prisma.serviceAppointment.findMany({
+      where: {
+        client_id: clientId
+      },
+      select: {
+        id: true,
+        appointment_date: true,
+        duration_minutes: true,
+        status: true,
+        modality: true,
+        created_at: true,
+        updated_at: true,
+        intrabbler: {
+          select: {
+            id: true,
+            name: true,
+            lastname: true,
+            photo_url: true,
+            intrabbler_profile: {
+              select: {
+                rating_avg: true,
+                profession: true
+              }
+            }
+          }
+        },
+        service_request: {
+          select: {
+            id: true,
+            title: true,
+            status: true,
+            service_category: {
+              select: {
+                id: true,
+                name: true,
+                icon_url: true
+              }
+            }
+          }
+        },
+        quotation: {
+          select: {
+            id: true,
+            estimated_price: {
+              select: {
+                estimated_total: true,
+                pricing_type: true
+              }
+            }
+          }
+        }
+      },
+      orderBy: [
+        { appointment_date: 'desc' },
+        { created_at: 'desc' }
+      ]
+    });
+  }
+
+  async getAppointmentDetail(clientId: string, appointmentId: string) {
+    const appointment = await this.prisma.serviceAppointment.findFirst({
+      where: {
+        id: Number(appointmentId),
+        client_id: clientId
+      },
+      select: {
+        id: true,
+        appointment_date: true,
+        duration_minutes: true,
+        status: true,
+        modality: true,
+        cancelation_reason: true,
+        cancelation_at: true,
+        client_id: true,
+        intrabbler_id: true,
+        service_request_id: true,
+        quotation_id: true,
+        location_address_id: true,
+        created_at: true,
+        updated_at: true,
+        intrabbler: {
+          select: {
+            id: true,
+            name: true,
+            lastname: true,
+            phone_number: true,
+            email: true,
+            photo_url: true,
+            intrabbler_profile: {
+              select: {
+                rating_avg: true,
+                total_reviews: true,
+                profession: true,
+                bio: true,
+                is_approved: true
+              }
+            }
+          }
+        },
+        service_request: {
+          select: {
+            id: true,
+            title: true,
+            description: true,
+            status: true,
+            preferred_date: true,
+            created_at: true,
+            updated_at: true,
+            service_category: {
+              select: {
+                id: true,
+                name: true,
+                slug: true,
+                icon_url: true
+              }
+            },
+            parameters: {
+              select: {
+                id: true,
+                category_parameter_id: true,
+                value_number: true,
+                value_text: true,
+                value_boolean: true,
+                category_parameter: {
+                  select: {
+                    id: true,
+                    name: true,
+                    code: true,
+                    parameter_type: true
+                  }
+                }
+              }
+            },
+            initial_budget: {
+              select: {
+                id: true,
+                budget_unit_quantity: true,
+                budget_unit_price: true,
+                budget_total: true,
+                pricing_type: true,
+                additional_costs: true,
+                created_at: true,
+                updated_at: true
+              }
+            }
+          }
+        },
+        quotation: {
+          select: {
+            id: true,
+            message: true,
+            status: true,
+            submitted_at: true,
+            responded_at: true,
+            estimated_distance_km: true,
+            availability_type: true,
+            availability_in_days: true,
+            created_at: true,
+            updated_at: true,
+            estimated_price: {
+              select: {
+                id: true,
+                estimated_unit_quantity: true,
+                estimated_unit_price: true,
+                estimated_total: true,
+                pricing_type: true,
+                additional_costs: true,
+                created_at: true,
+                updated_at: true
+              }
+            }
+          }
+        },
+        location_address: {
+          select: {
+            id: true,
+            address: true,
+            city: true,
+            state: true,
+            postal_code: true,
+            country: true,
+            type: true,
+            latitude: true,
+            longitude: true,
+            label: true,
+            reference: true
+          }
+        },
+        reviews: {
+          select: {
+            id: true,
+            rating: true,
+            comment: true,
+            created_at: true
+          }
+        },
+        incidents: {
+          select: {
+            id: true,
+            incident_type: true,
+            description: true,
+            severity: true,
+            resolved: true,
+            resolved_at: true,
+            resolution_notes: true,
+            created_at: true,
+            updated_at: true,
+            reporter: {
+              select: {
+                id: true,
+                name: true,
+                lastname: true
+              }
+            },
+            resolver: {
+              select: {
+                id: true,
+                name: true,
+                lastname: true
+              }
+            }
+          },
+          orderBy: {
+            created_at: 'desc'
+          }
+        }
+      }
+    });
+
+    if (!appointment) {
+      throw new Error('Appointment not found');
+    }
+
+    return appointment;
+  }
 }
