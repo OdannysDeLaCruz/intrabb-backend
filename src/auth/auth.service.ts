@@ -1,7 +1,8 @@
-import { Injectable, BadRequestException, InternalServerErrorException } from '@nestjs/common';
+import { Injectable, BadRequestException, InternalServerErrorException, UnauthorizedException } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
+import { PLATFORM_ALIADOS, PLATFORM_CLIENT } from 'src/constants';
 
 @Injectable()
 export class AuthService {
@@ -11,10 +12,12 @@ export class AuthService {
   constructor(private readonly prisma: PrismaService) {}
   
   async getUserByPhone(phone: string) {
+    const includeConfig = this.getIncludeConfig()
     const user = await this.prisma.user.findUnique({
       where: {
         phone_number: phone
-      }
+      },
+      include: includeConfig
     })
     console.log('user', user)
     return { user }
@@ -122,25 +125,57 @@ export class AuthService {
     }
   }
 
+  private validatePlatformAccess(userRoleId: number, platform?: string): boolean {
+    console.log('validatePlatformAccess', 'userRoleId', userRoleId, 'platform', platform)
+    const requiredRoleId = this.getRoleByPlatform(platform);
+    console.log('validatePlatformAccess', 'requiredRoleId', requiredRoleId)
+    return userRoleId === requiredRoleId;
+  }
+
   async signUpOrSignIn(createUserDto: CreateUserDto, platform?: string) {
     try {
+      console.log('signUpOrSignIn', createUserDto, 'platform:', platform)
       // Verificar si existe el phone_number
       const { user } = await this.getUserByPhone(createUserDto.phone_number)
       console.log('user::', user)
       if (user) {
-        // Usuario registrado, iniciar sesión
+        // Usuario existe - verificar acceso por plataforma
+        const isValidPlatform = this.validatePlatformAccess(user.role_id, platform)
+        console.log('isValidPlatform::', isValidPlatform)
+        if (!isValidPlatform) {
+          // console.log('isValidPlatform::', isValidPlatform)
+          const platformName = platform === PLATFORM_CLIENT ? 'Cliente' : 'Aliado Profesional';
+          const userRoleName = user.role?.name == 'client' ? 'Cliente' : 'Aliado Profesional';
+
+          // return {
+          //   message: `Acceso denegado. Este usuario está registrado como ${userRoleName} y no puede acceder a la plataforma de ${platformName}.`,
+          //   success: false,
+          //   error: 'PLATFORM_ACCESS_DENIED'
+          // }
+
+          throw new BadRequestException({
+            success: false,
+            message: `Actualmente estas registrado como ${userRoleName}, si quieres ser ${platformName} cambia a modo ${platformName} desde tu perfil de ${userRoleName}.`,
+            error: 'PLATFORM_ACCESS_DENIED'
+          })
+
+        }
+
+        // Obtener datos completos del usuario con includes específicos de la plataforma
+        const fullUserData = await this.prisma.user.findUnique({
+          where: { id: user.id },
+          include: this.getIncludeConfig(platform)
+        });
+
+        // Usuario registrado con rol correcto - iniciar sesión
         return {
           message: 'Usuario autenticado exitosamente',
           success: true,
-          user,
+          user: fullUserData,
         }
       }
     } catch (error) {
-      return {
-        message: 'Error al autenticar el usuario',
-        success: false,
-        error,
-      }
+      throw error
     }
 
     try {
@@ -167,7 +202,8 @@ export class AuthService {
               }
             }
           })
-        }
+        },
+        include: this.getIncludeConfig(platform)
       })
 
       return {

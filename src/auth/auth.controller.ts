@@ -16,7 +16,13 @@ export class AuthController {
 
   @Post('sign-up')
   async signUp(@Body() body: CreateUserDto, @Req() req: RequestWithPlatform) {
-    return await this.authService.signUpOrSignIn(body, req.platform)
+    console.log('SIGN UP', body)
+    try {
+      return await this.authService.signUpOrSignIn(body, req.platform)
+    } catch (error) {
+      console.log(error);
+      throw error;
+    }
   }
 
   @Get('me')
