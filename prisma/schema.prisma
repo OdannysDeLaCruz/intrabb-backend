@@ -45,8 +45,19 @@ enum QuotationStatus {
   pending
   accepted
   rejected
+  cancelled
 
   @@map("quotation_status")
+}
+
+// Status for counter offers.
+enum CounterOfferStatus {
+  pending
+  accepted
+  rejected
+  cancelled
+  
+  @@map("counter_offer_status")
 }
 
 // Status for service appointments.
@@ -146,6 +157,38 @@ enum VerificationChannel {
   @@map("verification_channel")
 }
 
+// Estado de pago de comisiones.
+enum CommissionPaymentStatus {
+  pending
+  partial_paid
+  fully_paid
+  overdue
+  waived
+  
+  @@map("commission_payment_status")
+}
+
+// Tipo de incidente en una cita.
+enum IncidentType {
+  accident
+  emergency
+  delay
+  inconsistency
+  other
+
+  @@map("incident_type")
+}
+
+// Severidad de un incidente.
+enum IncidentSeverity {
+  low
+  medium
+  high
+  critical
+
+  @@map("incident_severity")
+}
+
 // -------------------------------------
 // Models
 // -------------------------------------
@@ -184,6 +227,7 @@ model User {
   is_active                 Boolean @default(false)
   is_online                 Boolean @default(false)
   last_login                DateTime?
+  photo_url                 String?
   created_at                DateTime @default(now())
   updated_at                DateTime @updatedAt
 
@@ -197,8 +241,12 @@ model User {
   reviews_given             Review[] @relation("ReviewerReviews")
   service_requests          ServiceRequest[]
   quotations                Quotations[]
+  counter_offers            CounterOffer[]
   intrabbler_profile        IntrabblerProfile?
   wallet                    Wallet?
+  commission_payments_processed CommissionPayment[] @relation("CommissionProcessor")
+  incidents_reported        AppointmentIncident[] @relation("IncidentReporter")
+  incidents_resolved        AppointmentIncident[] @relation("IncidentResolver")
 
   @@map("users")
 }
@@ -323,24 +371,29 @@ model ServiceCategory {
 }
 
 model ServiceRequest {
-  id                    Int @id @default(autoincrement())
-  client_id             String @db.Uuid // debe tener role='client'
-  service_category_id   Int                  
-  title                 String
-  location_address_id   Int
-  description           String
-  preferred_date        DateTime?   
-  status                ServiceRequestStatus @default(receiving_offers)
-  is_active             Boolean @default(true)
-  created_at            DateTime @default(now()) 
-  updated_at            DateTime @updatedAt
+  id                      Int @id @default(autoincrement())
+  client_id               String @db.Uuid // debe tener role='client'
+  service_category_id     Int                  
+  title                   String
+  location_address_id     Int
+  description             String
+  preferred_date          DateTime?   
+  status                  ServiceRequestStatus @default(receiving_offers)
+  accepted_counter_offer_id Int? @unique // referencia a la contra oferta aceptada
+  initial_budget_id       Int? @unique // referencia al presupuesto inicial del cliente
+  is_active               Boolean @default(true)
+  created_at              DateTime @default(now()) 
+  updated_at              DateTime @updatedAt
 
-  client                User @relation(fields: [client_id], references: [id])
-  service_category      ServiceCategory @relation(fields: [service_category_id], references: [id])
-  location              UserAddress @relation(fields: [location_address_id], references: [id])
-  parameters            ServiceRequestParameterValue[]
-  quotations            Quotations[]
-  appointment           ServiceAppointment? // puede tener entre cero y uno
+  client                  User @relation(fields: [client_id], references: [id])
+  service_category        ServiceCategory @relation(fields: [service_category_id], references: [id])
+  location                UserAddress @relation(fields: [location_address_id], references: [id])
+  parameters              ServiceRequestParameterValue[]
+  quotations              Quotations[]
+  counter_offers          CounterOffer[]
+  accepted_counter_offer  CounterOffer? @relation("AcceptedCounterOffer", fields: [accepted_counter_offer_id], references: [id])
+  initial_budget          InitialBudget? @relation(fields: [initial_budget_id], references: [id])
+  appointment             ServiceAppointment? // puede tener entre cero y uno
 
   @@map("service_requests")
 }
@@ -387,11 +440,26 @@ model EstimatedPricesQuotations {
   estimated_unit_price Float
   estimated_total Float // unit_quantity * unit_price
   pricing_type PricingType
+  additional_costs Float? @default(0) // costos adicionales estimados
   created_at DateTime @default(now()) 
   updated_at DateTime @updatedAt
   quotation Quotations?
 
   @@map("estimated_prices_quotations")
+}
+
+model InitialBudget {
+  id Int @id @default(autoincrement())
+  budget_unit_quantity Float // cantidad de unidades que el cliente estima necesitar
+  budget_unit_price Float // precio por unidad que el cliente está dispuesto a pagar
+  budget_total Float // budget_unit_quantity * budget_unit_price
+  pricing_type PricingType // por hora, día o trabajo completo
+  additional_costs Float? @default(0) // costos adicionales que el cliente puede considerar
+  created_at DateTime @default(now()) 
+  updated_at DateTime @updatedAt
+  service_request ServiceRequest?
+
+  @@map("initial_budgets")
 }
 
 model Quotations {
@@ -412,9 +480,34 @@ model Quotations {
   service_request ServiceRequest @relation(fields: [service_request_id], references: [id])
   intrabbler User @relation(fields: [intrabbler_id], references: [id])
   estimated_price EstimatedPricesQuotations @relation(fields: [estimated_price_id], references: [id])
+  counter_offers CounterOffer[]
   service_appointment ServiceAppointment?
 
   @@map("quotations")
+}
+
+model CounterOffer {
+  id                     Int @id @default(autoincrement())
+  service_request_id     Int
+  quotation_id           Int
+  parent_counter_offer_id Int? // referencia a la contra oferta padre (si es una contra-contra oferta)
+  offered_by_id          String @db.Uuid // quien hizo la contra oferta (cliente o aliado)
+  amount                 Float // monto propuesto en la contra oferta
+  message                String? // mensaje opcional
+  status                 CounterOfferStatus @default(pending)
+  submitted_at           DateTime @default(now())
+  responded_at           DateTime?
+  created_at             DateTime @default(now())
+  updated_at             DateTime @updatedAt
+
+  service_request        ServiceRequest @relation(fields: [service_request_id], references: [id])
+  quotation              Quotations @relation(fields: [quotation_id], references: [id])
+  parent_counter_offer   CounterOffer? @relation("CounterOfferChain", fields: [parent_counter_offer_id], references: [id])
+  child_counter_offers   CounterOffer[] @relation("CounterOfferChain")
+  offered_by             User @relation(fields: [offered_by_id], references: [id])
+  accepted_service_request ServiceRequest? @relation("AcceptedCounterOffer")
+
+  @@map("counter_offers")
 }
 
 model ServiceAppointment {
@@ -423,9 +516,6 @@ model ServiceAppointment {
   duration_minutes      Int @default(60)
   status                AppointmentStatus @default(pending)
   modality              Modality @default(in_person)
-  commission_percentage Float @default(0)
-  commission_amount     Float @default(0)
-  is_commission_paid    Boolean @default(false)
   cancelation_reason    String?
   cancelation_at        DateTime?
   client_id             String @db.Uuid
@@ -443,8 +533,31 @@ model ServiceAppointment {
   service_request ServiceRequest @relation(fields: [service_request_id], references: [id])
   reviews Review[]
   transactions WalletTransaction[]
+  commission_record CommissionRecord?
+  incidents AppointmentIncident[]
 
   @@map("service_appointments")
+}
+
+model AppointmentIncident {
+  id              Int @id @default(autoincrement())
+  appointment_id  Int
+  reported_by     String @db.Uuid // ID del usuario que reporta (intrabbler o cliente)
+  incident_type   IncidentType
+  description     String
+  severity        IncidentSeverity
+  resolved        Boolean @default(false)
+  resolved_at     DateTime?
+  resolved_by     String? @db.Uuid // ID del usuario que resolvió (admin, intrabbler, etc.)
+  resolution_notes String?
+  created_at      DateTime @default(now())
+  updated_at      DateTime @updatedAt
+
+  appointment     ServiceAppointment @relation(fields: [appointment_id], references: [id])
+  reporter        User @relation("IncidentReporter", fields: [reported_by], references: [id])
+  resolver        User? @relation("IncidentResolver", fields: [resolved_by], references: [id])
+
+  @@map("appointment_incidents")
 }
 
 model Review {
@@ -485,6 +598,7 @@ model PaymentMethod {
   updated_at  DateTime @updatedAt
 
   transactions WalletTransaction[]
+  commission_payments CommissionPayment[]
 
   @@map("payment_methods")
 }
@@ -497,7 +611,7 @@ model WalletTransaction {
   status              TransactionStatus @default(pending)
   transaction_id      String @unique
   wallet_id           Int
-  payment_method_id   Int?
+  payment_method_id   Int? // NULL si es pago por comision, ya que el metodo de pago se registra en la comision
   related_service_appointment_id Int?
   created_at          DateTime @default(now()) 
   updated_at          DateTime @updatedAt
@@ -505,6 +619,7 @@ model WalletTransaction {
   wallet              Wallet @relation(fields: [wallet_id], references: [id])
   payment_method      PaymentMethod? @relation(fields: [payment_method_id], references: [id], onDelete: Cascade)
   related_service_appointment ServiceAppointment? @relation(fields: [related_service_appointment_id], references: [id], onDelete: Cascade)
+  commission_payment  CommissionPayment?
 
   @@map("wallet_transactions")
 }
@@ -520,4 +635,68 @@ model ProfessionalServicesOffered {
   service_category      ServiceCategory @relation(fields: [service_category_id], references: [id])
 
 @@map("professional_services_offered")
+}
+
+model CommissionRecord {
+  id                        Int @id @default(autoincrement())
+  service_appointment_id    Int @unique
+  
+  // Configuración de comisión (snapshot al momento de crear la cita)
+  commission_percentage_due Float    // % que se debe cobrar (snapshot)
+  commission_amount_due     Float    // monto que se debe cobrar
+  
+  // Tracking de pagos realizados
+  commission_percentage_paid Float @default(0)  // % ya cobrado
+  commission_amount_paid     Float @default(0)  // monto ya cobrado
+  
+  // Estados y flags
+  is_paid_full             Boolean @default(false)  // ¿está completamente pagado?
+  payment_status           CommissionPaymentStatus @default(pending)
+  
+  // Audit trail
+  due_date                 DateTime?   // cuándo vence la comisión
+  first_payment_at         DateTime?   // primer pago parcial
+  fully_paid_at            DateTime?   // cuándo se completó el pago
+  
+  // Metadatos
+  notes                    String?     // notas sobre la comisión
+  created_at               DateTime @default(now())
+  updated_at               DateTime @updatedAt
+  
+  // Relaciones
+  service_appointment      ServiceAppointment @relation(fields: [service_appointment_id], references: [id])
+  commission_payments      CommissionPayment[]  // pagos parciales
+  
+  @@map("commission_records")
+}
+
+model CommissionPayment {
+  id                    Int @id @default(autoincrement())
+  commission_record_id  Int
+  
+  amount_paid           Float
+  percentage_paid       Float    // qué % del total representa este pago
+  payment_method_id     Int  // efectivo, transferencia, etc.
+  
+  // Referencias a transacciones
+  wallet_transaction_id Int @unique     // relación con WalletTransaction (siempre requerida)
+  
+  // Audit trail flexible
+  processed_by_id       String? @db.Uuid  // NULL si es automático
+  processed_automatically Boolean @default(false)  // flag para saber si fue automático
+  processing_system     String?  // ej: "cron_job", "webhook", "manual_admin"
+  
+  processed_at          DateTime @default(now())
+  notes                 String?
+  
+  created_at            DateTime @default(now())
+  updated_at            DateTime @updatedAt
+  
+  // Relaciones  
+  commission_record     CommissionRecord @relation(fields: [commission_record_id], references: [id])
+  wallet_transaction    WalletTransaction @relation(fields: [wallet_transaction_id], references: [id])
+  processed_by          User? @relation("CommissionProcessor", fields: [processed_by_id], references: [id])
+  payment_method        PaymentMethod @relation(fields: [payment_method_id], references: [id])
+  
+  @@map("commission_payments")
 }
