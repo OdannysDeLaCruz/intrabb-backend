@@ -163,6 +163,9 @@ export class UsersService {
           }
         },
         service_appointment: true
+      },
+      orderBy: {
+        created_at: 'desc'
       }
     });
   }

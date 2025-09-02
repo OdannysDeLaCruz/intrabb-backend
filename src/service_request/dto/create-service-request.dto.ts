@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsString, IsOptional, IsInt, IsDateString, IsArray, ValidateNested, IsNumber, IsEnum } from 'class-validator';
+import { IsNotEmpty, IsString, IsOptional, IsInt, IsDateString, IsArray, ValidateNested, IsNumber, IsEnum, ArrayMaxSize } from 'class-validator';
 import { Type } from 'class-transformer';
 import { PricingType } from '@prisma/client';
 
@@ -40,6 +40,24 @@ export class CreateInitialBudgetDto {
   additional_costs?: number;
 }
 
+export class CreateServiceRequestImageDto {
+  @IsString()
+  @IsNotEmpty()
+  url: string; // URL de Cloudinary
+
+  @IsOptional()
+  @IsString()
+  public_id?: string; // public_id de Cloudinary para eliminación
+
+  @IsOptional()
+  @IsNumber()
+  image_order?: number;
+
+  @IsOptional()
+  @IsString()
+  alt_text?: string;
+}
+
 
 export class CreateServiceRequestDto {
   @IsString()
@@ -76,4 +94,11 @@ export class CreateServiceRequestDto {
   @ValidateNested()
   @Type(() => CreateInitialBudgetDto)
   initial_budget?: CreateInitialBudgetDto;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(3, { message: 'Máximo 3 imágenes permitidas' })
+  @ValidateNested({ each: true })
+  @Type(() => CreateServiceRequestImageDto)
+  images?: CreateServiceRequestImageDto[];
 }

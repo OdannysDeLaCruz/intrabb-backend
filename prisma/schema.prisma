@@ -394,8 +394,23 @@ model ServiceRequest {
   accepted_counter_offer  CounterOffer? @relation("AcceptedCounterOffer", fields: [accepted_counter_offer_id], references: [id])
   initial_budget          InitialBudget? @relation(fields: [initial_budget_id], references: [id])
   appointment             ServiceAppointment? // puede tener entre cero y uno
+  images                  ServiceRequestImage[] // imágenes opcionales (máx. 5)
 
   @@map("service_requests")
+}
+
+model ServiceRequestImage {
+  id                  Int @id @default(autoincrement())
+  service_request_id  Int
+  image_url           String // URL de la imagen (S3, Cloudinary, etc.)
+  image_order         Int @default(1) // orden de la imagen (1-5)
+  alt_text            String? // texto alternativo opcional
+  created_at          DateTime @default(now())
+  updated_at          DateTime @updatedAt
+
+  service_request     ServiceRequest @relation(fields: [service_request_id], references: [id], onDelete: Cascade)
+
+  @@map("service_request_images")
 }
 
 model ServiceCategoryParameter {

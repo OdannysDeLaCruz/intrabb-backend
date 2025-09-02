@@ -17,6 +17,7 @@ import { PlatformMiddleware } from './common/middleware/platform.middleware';
 import { WebhookRawBodyMiddleware } from './common/middleware/webhook-raw-body.middleware';
 import { AppGateway } from './app/app.gateway';
 import { QuotationsModule } from './quotations/quotations.module';
+import { CommonModule } from './common/common.module';
 
 @Module({
   imports: [
@@ -40,7 +41,8 @@ import { QuotationsModule } from './quotations/quotations.module';
     ServiceRequestModule,
     VerifiableDocumentsModule,
     IntrabblersModule,
-    QuotationsModule
+    QuotationsModule,
+    CommonModule
   ],
   controllers: [],
   providers: [

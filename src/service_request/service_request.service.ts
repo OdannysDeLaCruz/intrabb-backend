@@ -1,18 +1,115 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { CreateServiceRequestDto } from './dto/create-service-request.dto';
+import { CreateServiceRequestDto, CreateServiceRequestImageDto } from './dto/create-service-request.dto';
 import { ServiceRequest, ServiceRequestStatus } from '@prisma/client';
 import { AppGateway } from '../app/app.gateway';
+import { CloudinaryService } from '../common/services/cloudinary.service';
 
 @Injectable()
 export class ServiceRequestService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly appGateway: AppGateway,
+    private readonly cloudinaryService: CloudinaryService,
   ) {}
 
+  /**
+   * Crea una nueva solicitud de servicio con URLs de imágenes de Cloudinary
+   * Las imágenes ya fueron subidas directamente a Cloudinary desde el frontend
+   */
+  async createWithImages(
+    createServiceRequestDto: CreateServiceRequestDto,
+    cloudinaryImages?: CreateServiceRequestImageDto[]
+  ): Promise<ServiceRequest & { 
+    imageSummary?: {
+      totalImages: number;
+      validImages: number;
+      invalidImages: number;
+      errors?: string[];
+    }
+  }> {
+    console.log(`🚀 Creando solicitud con ${cloudinaryImages?.length || 0} imágenes de Cloudinary`);
+
+    // PASO 1: Crear la solicitud de servicio primero (sin imágenes)
+    const serviceRequest = await this.create(createServiceRequestDto);
+    console.log(`✅ Solicitud creada exitosamente con ID: ${serviceRequest.id}`);
+
+    let imageSummary = {
+      totalImages: cloudinaryImages?.length || 0,
+      validImages: 0,
+      invalidImages: 0,
+      errors: [] as string[]
+    };
+
+    // PASO 2: Validar y guardar URLs de Cloudinary si las hay
+    if (cloudinaryImages && cloudinaryImages.length > 0) {
+      try {
+        console.log(`📸 Validando ${cloudinaryImages.length} URLs de Cloudinary...`);
+        
+        const validImages: CreateServiceRequestImageDto[] = [];
+        
+        for (const image of cloudinaryImages) {
+          // Validar que la URL pertenezca a nuestro Cloudinary
+          if (this.cloudinaryService.validateCloudinaryUrl(image.url)) {
+            // Extraer public_id si no viene incluido
+            if (!image.public_id) {
+              image.public_id = this.cloudinaryService.extractPublicIdFromUrl(image.url);
+            }
+            validImages.push(image);
+            imageSummary.validImages++;
+          } else {
+            imageSummary.invalidImages++;
+            imageSummary.errors.push(`URL inválida: ${image.url}`);
+            console.warn(`⚠️ URL de Cloudinary inválida: ${image.url}`);
+          }
+        }
+
+        // PASO 3: Guardar las URLs válidas en la base de datos
+        if (validImages.length > 0) {
+          await this.saveServiceRequestCloudinaryImages(serviceRequest.id, validImages);
+          console.log(`✅ ${validImages.length} URLs de imágenes guardadas en la base de datos`);
+        }
+
+        if (imageSummary.invalidImages > 0) {
+          console.warn(`⚠️ ${imageSummary.invalidImages} URLs inválidas encontradas`);
+        }
+
+      } catch (error) {
+        console.error(`❌ Error crítico procesando imágenes:`, error.message);
+        imageSummary.errors.push(`Error crítico: ${error.message}`);
+      }
+    }
+
+    // PASO 4: Obtener la solicitud actualizada con las imágenes
+    const completeServiceRequest = await this.findOne(serviceRequest.id);
+    
+    return {
+      ...completeServiceRequest,
+      imageSummary: imageSummary.totalImages > 0 ? imageSummary : undefined
+    };
+  }
+
+  /**
+   * Guarda las URLs de Cloudinary en la base de datos
+   */
+  private async saveServiceRequestCloudinaryImages(
+    serviceRequestId: number,
+    cloudinaryImages: CreateServiceRequestImageDto[]
+  ): Promise<void> {
+    const imageData = cloudinaryImages.map((image, index) => ({
+      service_request_id: serviceRequestId,
+      image_url: image.url,
+      image_order: image.image_order || index + 1,
+      alt_text: image.alt_text,
+    }));
+
+    await this.prisma.serviceRequestImage.createMany({
+      data: imageData
+    });
+  }
+
   async create(createServiceRequestDto: CreateServiceRequestDto): Promise<ServiceRequest> {
-    const { parameters, initial_budget, ...serviceRequestData } = createServiceRequestDto;
+    const { parameters, initial_budget, images, ...serviceRequestData } = createServiceRequestDto;
 
     // Validate preferred_date if provided
     if (serviceRequestData.preferred_date) {
@@ -75,6 +172,7 @@ export class ServiceRequestService {
               value_boolean: param.value_boolean,
             }))
           } : undefined,
+          images: undefined,
         },
         include: {
           client: {
@@ -128,7 +226,19 @@ export class ServiceRequestService {
               estimated_price: true,
             }
           },
-          initial_budget: true
+          initial_budget: true,
+          images: {
+            select: {
+              id: true,
+              image_url: true,
+              image_order: true,
+              alt_text: true,
+              created_at: true,
+            },
+            orderBy: {
+              image_order: 'asc'
+            }
+          }
         }
       });
 
@@ -136,7 +246,7 @@ export class ServiceRequestService {
       return { serviceRequest };
     });
     
-    // 🚀 NUEVA LÓGICA: Notificar a aliados en tiempo real
+    // Notificar a aliados en tiempo real
     // Obtener la solicitud completa con todas las relaciones para la notificación
     console.log('serviceRequest', result.serviceRequest)
     const completeServiceRequest = await this.findOne(result.serviceRequest.id);
@@ -277,7 +387,19 @@ export class ServiceRequestService {
           }
         },
         appointment: true,
-        initial_budget: true
+        initial_budget: true,
+        images: {
+          select: {
+            id: true,
+            image_url: true,
+            image_order: true,
+            alt_text: true,
+            created_at: true,
+          },
+          orderBy: {
+            image_order: 'asc'
+          }
+        }
       }
     });
   }
@@ -347,7 +469,19 @@ export class ServiceRequestService {
           }
         },
         appointment: true,
-        initial_budget: true
+        initial_budget: true,
+        images: {
+          select: {
+            id: true,
+            image_url: true,
+            image_order: true,
+            alt_text: true,
+            created_at: true,
+          },
+          orderBy: {
+            image_order: 'asc'
+          }
+        }
       },
       orderBy: {
         created_at: 'desc'
@@ -494,6 +628,18 @@ export class ServiceRequestService {
             select: {
               quotations: true
             }
+          },
+          images: {
+            select: {
+              id: true,
+              image_url: true,
+              image_order: true,
+              alt_text: true,
+              created_at: true,
+            },
+            orderBy: {
+              image_order: 'asc'
+            }
           }
         },
         orderBy: {
@@ -565,7 +711,19 @@ export class ServiceRequestService {
             estimated_price: true,
           }
         },
-        initial_budget: true
+        initial_budget: true,
+        images: {
+          select: {
+            id: true,
+            image_url: true,
+            image_order: true,
+            alt_text: true,
+            created_at: true,
+          },
+          orderBy: {
+            image_order: 'asc'
+          }
+        }
       }
     });
   }

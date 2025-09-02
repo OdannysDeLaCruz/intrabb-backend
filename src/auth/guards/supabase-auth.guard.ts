@@ -17,20 +17,20 @@ export class SupabaseAuthGuard implements CanActivate {
       context.getHandler(),
       context.getClass(),
     ]);
-console.log('isPublic sb', isPublic);
+// console.log('isPublic sb', isPublic);
     if (isPublic) {
       return true;
     }
 
     const request = context.switchToHttp().getRequest<Request>();
     const response = context.switchToHttp().getResponse<Response>();
-    console.log('SupabaseAuthGuard request', request.headers);
+    // console.log('SupabaseAuthGuard request', request.headers);
     const user = await this.supabaseAuthService.getUser(request, response);
     
     if (!user) {
       throw new UnauthorizedException();
     }
-    console.log('USER SB', user);
+    // console.log('USER SB', user);
 
     // Attach user to request for use in controllers
     request.user = user as { id: string };

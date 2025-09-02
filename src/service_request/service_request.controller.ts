@@ -9,7 +9,7 @@ export class ServiceRequestController {
   constructor(private readonly serviceRequestService: ServiceRequestService) {}
 
   @Post()
-  @Public()
+  // @Public()
   async create(@Body() createServiceRequestDto: CreateServiceRequestDto) {
     try {
       const serviceRequest = await this.serviceRequestService.create(createServiceRequestDto);
@@ -27,6 +27,60 @@ export class ServiceRequestController {
           error: error.message
         },
         HttpStatus.INTERNAL_SERVER_ERROR
+      );
+    }
+  }
+
+  @Post('with-images')
+  // @Public()
+  async createWithImages(
+    @Body() createServiceRequestDto: CreateServiceRequestDto
+  ) {
+    try {
+      const result = await this.serviceRequestService.createWithImages(
+        createServiceRequestDto,
+        createServiceRequestDto.images || []
+      );
+
+      // Separar el resumen de imágenes de los datos principales
+      const { imageSummary, ...serviceRequestData } = result;
+      
+      // Crear mensaje dinámico basado en el resultado de las imágenes
+      let message = 'Solicitud de servicio creada exitosamente';
+      if (imageSummary) {
+        if (imageSummary.validImages > 0 && imageSummary.invalidImages === 0) {
+          message += ` con ${imageSummary.validImages} imágenes`;
+        } else if (imageSummary.validImages > 0 && imageSummary.invalidImages > 0) {
+          message += ` con ${imageSummary.validImages} de ${imageSummary.totalImages} imágenes válidas`;
+        } else if (imageSummary.invalidImages === imageSummary.totalImages) {
+          message += ', pero no se pudieron procesar las imágenes';
+        }
+      }
+      
+      return {
+        success: true,
+        data: serviceRequestData,
+        message,
+        ...(imageSummary && {
+          imageDetails: {
+            totalImages: imageSummary.totalImages,
+            validImages: imageSummary.validImages,
+            invalidImages: imageSummary.invalidImages,
+            ...(imageSummary.errors && imageSummary.errors.length > 0 && {
+              errors: imageSummary.errors
+            })
+          }
+        })
+      };
+    } catch (error) {
+      console.log(error);
+      throw new HttpException(
+        {
+          success: false,
+          message: error.message || 'Error al crear la solicitud de servicio',
+          error: error.message
+        },
+        HttpStatus.BAD_REQUEST
       );
     }
   }
@@ -91,7 +145,7 @@ export class ServiceRequestController {
   }
 
   @Get(':id')
-  @Public()
+  // @Public()
   async findOne(@Param('id') id: string) {
     try {
       const serviceRequest = await this.serviceRequestService.findOne(+id);
