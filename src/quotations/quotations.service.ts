@@ -50,28 +50,28 @@ export class QuotationsService {
     });
 
     if (!serviceRequest) {
-      throw new NotFoundException('Service request not found');
+      throw new NotFoundException('Solicitud de servicio no encontrada');
     }
 
     if (serviceRequest.status !== 'receiving_offers') {
-      throw new BadRequestException('This service request is not accepting offers');
+      throw new BadRequestException('Esta solicitud de servicio ya no está aceptando ofertas');
     }
 
     if (!serviceRequest.is_active) {
-      throw new BadRequestException('This service request is not active');
+      throw new BadRequestException('Esta solicitud de servicio ya no está activa');
     }
 
     // Check if the intrabbler already has a quotation for this request
-    // const existingQuotation = await this.prisma.quotations.findFirst({
-    //   where: {
-    //     service_request_id,
-    //     intrabbler_id: intrabblerUserId,
-    //   }
-    // });
+    const existingQuotation = await this.prisma.quotations.findFirst({
+      where: {
+        service_request_id,
+        intrabbler_id: intrabblerUserId,
+      }
+    });
 
-    // if (existingQuotation) {
-    //   throw new BadRequestException('You have already submitted a quotation for this service request');
-    // }
+    if (existingQuotation) {
+      throw new BadRequestException('Ya tienes una cotización para esta solicitud de servicio');
+    }
 
     // Verify that the user is an intrabbler and approved
     const intrabblerProfile = await this.prisma.intrabblerProfile.findUnique({
@@ -79,11 +79,26 @@ export class QuotationsService {
     });
 
     if (!intrabblerProfile) {
-      throw new ForbiddenException('Only intrabblers can create quotations');
+      throw new ForbiddenException('Solo los aliados pueden crear cotizaciones');
     }
 
     if (!intrabblerProfile.is_approved) {
-      throw new ForbiddenException('Your intrabbler profile must be approved to create quotations');
+      throw new ForbiddenException('Su perfil de aliado debe estar aprobado para crear cotizaciones');
+    }
+
+    // Verify wallet balance - cannot create quotations if debt is 20,000 COP or more
+    const aliado_wallet = await this.prisma.wallet.findUnique({
+      where: { user_id: intrabblerUserId },
+    });
+
+    if (!aliado_wallet) {
+      throw new BadRequestException('Wallet del aliado no encontrada');
+    }
+
+    const MAXIMUM_DEBT_ALLOWED = -20000; // COP 20,000 negative balance
+    if (aliado_wallet.balance < MAXIMUM_DEBT_ALLOWED) {
+      // throw new ForbiddenException('No puedes crear cotizaciones con una mora igual o mayor a COP 20.000. Tu balance actual es: COP ' + aliado_wallet.balance.toLocaleString('es-CO'));
+      throw new BadRequestException(`Tienes un saldo de COP ${aliado_wallet.balance.toLocaleString('es-CO')} por pagar. Recarga tu cuenta para que puedas enviar esta cotización.`)
     }
 
     // Create the quotation in a transaction

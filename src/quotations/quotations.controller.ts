@@ -33,7 +33,7 @@ export class QuotationsController {
       const userRole = req.user.role?.name;
       console.log(userRole);
       if (userRole !== 'intrabbler') {
-        throw new ForbiddenException('Only intrabblers can create quotations');
+        throw new ForbiddenException('Solo los aliados pueden crear cotizaciones');
       }
 
       const result = await this.quotationsService.create(createQuotationDto, req.user.user_id);
@@ -51,7 +51,7 @@ export class QuotationsController {
       throw new HttpException(
         {
           success: false,
-          message: 'Error creating quotation',
+          message: 'Error creando cotización',
           error: error.message
         },
         HttpStatus.INTERNAL_SERVER_ERROR
