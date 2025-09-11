@@ -148,7 +148,12 @@ export class UsersService {
             description: true,
             status: true,
             created_at: true,
-            updated_at: true
+            updated_at: true,
+            service_category: {
+              select: {
+                name: true,
+              }
+            }
           }
         },
         estimated_price: {
@@ -162,7 +167,7 @@ export class UsersService {
             updated_at: true
           }
         },
-        service_appointment: true
+        service_appointment: true,
       },
       orderBy: {
         created_at: 'desc'
