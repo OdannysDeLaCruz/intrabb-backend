@@ -352,7 +352,8 @@ model ServiceCategory {
   slug               String @unique
   description        String?
   is_active          Boolean @default(true)
-  icon_url           String?             
+  icon_url           String?
+  cover_photo_url    String?           
   parent_id          Int?     
   created_at         DateTime @default(now()) 
   updated_at         DateTime @updatedAt           
