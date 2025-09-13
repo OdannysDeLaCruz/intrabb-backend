@@ -247,16 +247,11 @@ export class ServiceRequestService {
     });
     
     // Notificar a aliados en tiempo real
-    // Obtener la solicitud completa con todas las relaciones para la notificación
-    console.log('serviceRequest', result.serviceRequest)
-    const completeServiceRequest = await this.findOne(result.serviceRequest.id);
-    console.log('completeServiceRequest', completeServiceRequest)
     if (result.serviceRequest) {
       await this.notifyAliadosOfNewRequest(result.serviceRequest);
     }
 
     return result.serviceRequest;
-
   }
 
   /**
