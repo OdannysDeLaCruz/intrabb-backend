@@ -77,8 +77,8 @@ export class CreateServiceRequestDto {
   location_address_id: number;
 
   @IsString()
-  @IsNotEmpty()
-  description: string;
+  @IsOptional()
+  description?: string;
 
   @IsOptional()
   @IsDateString()
