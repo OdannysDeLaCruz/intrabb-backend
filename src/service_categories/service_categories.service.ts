@@ -416,6 +416,46 @@ export class ServiceCategoriesService {
     return result;
   }
 
+  async findParentCategories() {
+    // Generate cache key
+    const cacheKey = 'service_categories:parents';
+    
+    // Try to get from cache first
+    const cachedResult = await this.cacheService.get(cacheKey);
+    if (cachedResult) {
+      return cachedResult;
+    }
+
+    const result = await this.prisma.serviceCategory.findMany({
+      where: {
+        is_active: true,
+        parent_id: null, // Only categories without parent (parent categories)
+      },
+      include: {
+        _count: {
+          select: {
+            service_requests: true,
+          },
+        },
+      },
+      orderBy: [
+        {
+          service_requests: {
+            _count: 'desc',
+          },
+        },
+        {
+          name: 'asc',
+        },
+      ],
+    });
+
+    // Cache the result for 10 minutes
+    await this.cacheService.set(cacheKey, result, 600);
+
+    return result;
+  }
+
   // Cache invalidation methods
   async invalidateCache() {
     await this.cacheService.invalidateAllSearchCaches();
