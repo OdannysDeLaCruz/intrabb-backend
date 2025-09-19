@@ -2,7 +2,6 @@ import { Controller, Get, Post, Body, Param, HttpException, HttpStatus, Patch, Q
 import { ServiceRequestService } from './service_request.service';
 import { CreateServiceRequestDto } from './dto/create-service-request.dto';
 import { ServiceRequestStatus } from '@prisma/client';
-import { Public } from 'src/common/decorators';
 
 @Controller('service-requests')
 export class ServiceRequestController {
@@ -229,6 +228,49 @@ export class ServiceRequestController {
         {
           success: false,
           message: 'Error al obtener las solicitudes de servicio',
+          error: error.message
+        },
+        HttpStatus.INTERNAL_SERVER_ERROR
+      );
+    }
+  }
+
+  @Post('fixed-price')
+  async createFixedPrice(@Body() createFixedPriceDto: any) {
+    try {
+      const serviceRequest = await this.serviceRequestService.createFixedPrice(createFixedPriceDto);
+      return {
+        success: true,
+        data: serviceRequest,
+        message: 'Solicitud de servicio de precio fijo creada exitosamente'
+      };
+    } catch (error) {
+      console.log(error);
+      throw new HttpException(
+        {
+          success: false,
+          message: 'Error al crear la solicitud de servicio de precio fijo',
+          error: error.message
+        },
+        HttpStatus.BAD_REQUEST
+      );
+    }
+  }
+
+  @Get(':id/applications')
+  async getApplicationsForRequest(@Param('id') id: string) {
+    try {
+      // Este endpoint redirige al ApplicationsService
+      const applications = await this.serviceRequestService.findApplicationsForRequest(+id);
+      return {
+        success: true,
+        data: applications
+      };
+    } catch (error) {
+      throw new HttpException(
+        {
+          success: false,
+          message: 'Error al obtener las aplicaciones para la solicitud',
           error: error.message
         },
         HttpStatus.INTERNAL_SERVER_ERROR

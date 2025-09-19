@@ -4,6 +4,7 @@ import { CreateServiceRequestDto, CreateServiceRequestImageDto } from './dto/cre
 import { ServiceRequest, ServiceRequestStatus } from '@prisma/client';
 import { AppGateway } from '../app/app.gateway';
 import { CloudinaryService } from '../common/services/cloudinary.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class ServiceRequestService {
@@ -11,6 +12,7 @@ export class ServiceRequestService {
     private readonly prisma: PrismaService,
     private readonly appGateway: AppGateway,
     private readonly cloudinaryService: CloudinaryService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   /**
@@ -34,7 +36,7 @@ export class ServiceRequestService {
     const serviceRequest = await this.create(createServiceRequestDto);
     console.log(`✅ Solicitud creada exitosamente con ID: ${serviceRequest.id}`);
 
-    let imageSummary = {
+    const imageSummary = {
       totalImages: cloudinaryImages?.length || 0,
       validImages: 0,
       invalidImages: 0,
@@ -109,7 +111,7 @@ export class ServiceRequestService {
   }
 
   async create(createServiceRequestDto: CreateServiceRequestDto): Promise<ServiceRequest> {
-    const { parameters, initial_budget, images, ...serviceRequestData } = createServiceRequestDto;
+    const { parameters, initial_budget, ...serviceRequestData } = createServiceRequestDto;
 
     // Validate preferred_date if provided
     if (serviceRequestData.preferred_date) {
@@ -248,6 +250,7 @@ export class ServiceRequestService {
     
     // Notificar a aliados en tiempo real
     if (result.serviceRequest) {
+      console.log('🎯 Notificando nueva solicitud a aliados...');
       await this.notifyAliadosOfNewRequest(result.serviceRequest);
     }
 
@@ -256,27 +259,64 @@ export class ServiceRequestService {
 
   /**
    * Notifica a los aliados relevantes sobre una nueva solicitud de servicio
+   * Usa sistema híbrido: WebSocket para online, Push para offline
    */
   private async notifyAliadosOfNewRequest(serviceRequest: any) {
     try {
       // TODO: Implementar lógica de matching más sofisticada
-      // Por ahora, notificamos a todos los aliados online
+      // Por ahora, notificamos a todos los aliados activos
       // En el futuro, puedes filtrar por:
       // - categoría de servicio
       // - ubicación/radio geográfico
       // - disponibilidad del aliado
       // - rating/experiencia
-      
-      const onlineAliados = await this.appGateway.getOnlineAliados();
-      console.log('Aliados Conectados: ', onlineAliados)
-      if (onlineAliados.length === 0) {
-        console.log('⚠️ No hay aliados online para notificar');
+
+      // Obtener todos los aliados activos (role "intrabbler")
+      const aliados = await this.prisma.user.findMany({
+        where: {
+          role: {
+            name: 'intrabbler'
+          },
+          is_active: true,
+        },
+        select: {
+          id: true,
+          name: true,
+          lastname: true,
+        },
+      });
+
+      console.log('🔍 DEBUG - Aliados encontrados:', aliados.map(a => ({ id: a.id, name: `${a.name} ${a.lastname}` })));
+
+      // DEBUG: También verificar todos los roles
+      const allRoles = await this.prisma.role.findMany();
+      console.log('🔍 DEBUG - Todos los roles:', allRoles);
+
+      if (aliados.length === 0) {
+        console.log('⚠️ No hay aliados activos para notificar');
         return;
       }
 
-      const notificationData = {
+      // Preparar payload de notificación para Push
+      const notificationPayload = {
+        title: 'Nueva Oportunidad de Trabajo',
+        body: `${serviceRequest.service_category?.name}: ${serviceRequest.description}`,
+        data: {
+          type: 'nueva_oportunidad',
+          service_request_id: serviceRequest.id.toString(),
+          service_category: serviceRequest.service_category?.name || '',
+          client_name: serviceRequest.client ? `${serviceRequest.client.name} ${serviceRequest.client.lastname}`.trim() : '',
+          location: serviceRequest.location?.city || '',
+          created_at: serviceRequest.created_at?.toISOString() || '',
+        },
+        imageUrl: serviceRequest.images?.[0]?.image_url, // Primera imagen si existe
+      };
+      console.log('🔍 DEBUG - Payload de notificación PUSH:', notificationPayload);
+
+      // Preparar datos para WebSocket (formato original)
+      const websocketData = {
         id: serviceRequest.id,
-        title: serviceRequest.description, // Usar description como title ya que no hay campo title en el schema
+        title: serviceRequest.description,
         description: serviceRequest.description,
         service_category_id: serviceRequest.service_category_id,
         client_id: serviceRequest.client_id,
@@ -296,22 +336,41 @@ export class ServiceRequestService {
         },
         initial_budget: serviceRequest.initial_budget,
       };
-      console.log('notificationData', notificationData)
-      // Enviar notificación a todos los aliados online
-      let notificationsSent = 0;
-      for (const aliadoId of onlineAliados) {
-        const success = await this.appGateway.notifyAliado(
-          aliadoId,
-          'nueva_oportunidad_para_ti',
-          notificationData
-        );
-        if (success) {
-          notificationsSent++;
+
+      console.log('🔍 DEBUG - Datos para WebSocket:', websocketData);
+
+      // Enviar notificaciones híbridas (WebSocket + Push) a todos los aliados
+      let successCount = 0;
+      const aliadoIds = aliados.map(aliado => aliado.id);
+
+      for (const aliadoId of aliadoIds) {
+        try {
+          const result = await this.notificationsService.sendHybridNotification(
+            aliadoId,
+            'nueva_oportunidad',
+            notificationPayload,
+            {
+              priority: 'high',
+              websocketCallback: async (userId, event, data) => {
+                // Usar los datos originales de WebSocket
+                return await this.appGateway.notifyAliado(userId, 'nueva_oportunidad_para_ti', websocketData);
+              },
+            }
+          );
+
+          if (result.success) {
+            successCount++;
+            const method = result.websocket ? 'WebSocket' : result.push ? 'Push' : 'Queue';
+            console.log(`✅ Notificación enviada a aliado ${aliadoId} via ${method}`);
+          } else if (result.queued) {
+            console.log(`⏳ Notificación encolada para aliado ${aliadoId}`);
+          }
+        } catch (error) {
+          console.error(`❌ Error enviando notificación a aliado ${aliadoId}:`, error);
         }
       }
 
-      console.log(`🔔 Nueva solicitud ${serviceRequest.id}: ${notificationsSent} notificaciones enviadas de ${onlineAliados.length} aliados online`);
-      
+      console.log(`🔔 Nueva solicitud ${serviceRequest.id}: ${successCount} notificaciones enviadas exitosamente de ${aliados.length} aliados`);      
     } catch (error) {
       // No queremos que falle la creación de la solicitud si hay problemas con las notificaciones
       console.error('❌ Error al notificar aliados sobre nueva solicitud:', error);
@@ -719,6 +778,107 @@ export class ServiceRequestService {
             image_order: 'asc'
           }
         }
+      }
+    });
+  }
+
+  /**
+   * Creates a new fixed price service request
+   */
+  async createFixedPrice(data: {
+    client_id: string;
+    service_category_id: number;
+    request_type: 'fixed_price';
+    amount: number;
+    currency: string;
+  }): Promise<ServiceRequest> {
+    // Verify that the service category has fixed price enabled
+    const category = await this.prisma.serviceCategory.findUnique({
+      where: { id: data.service_category_id },
+      select: { 
+        id: true, 
+        name: true, 
+        has_fixed_price: true, 
+        fixed_price_amount: true 
+      }
+    });
+
+    if (!category) {
+      throw new BadRequestException('La categoría de servicio no existe');
+    }
+
+    if (!category.has_fixed_price) {
+      throw new BadRequestException('Esta categoría no tiene precio fijo habilitado');
+    }
+
+    if (!category.fixed_price_amount || category.fixed_price_amount.toString() !== data.amount.toString()) {
+      throw new BadRequestException('El monto no coincide con el precio fijo de la categoría');
+    }
+
+    // Create the fixed price service request
+    const serviceRequest = await this.prisma.serviceRequest.create({
+      data: {
+        client_id: data.client_id,
+        service_category_id: data.service_category_id,
+        request_type: data.request_type,
+        title: `Servicio de precio fijo: ${category.name}`,
+        description: `Solicitud de servicio de precio fijo para ${category.name}`,
+        status: 'receiving_applications', // Special status for fixed price requests
+        amount: data.amount,
+        currency: data.currency,
+      },
+      include: {
+        client: {
+          select: {
+            id: true,
+            name: true,
+            lastname: true,
+            phone_number: true,
+            email: true,
+          }
+        },
+        service_category: {
+          select: {
+            id: true,
+            name: true,
+            slug: true,
+          }
+        }
+      }
+    });
+
+    // Notify available professionals via WebSocket
+    try {
+      await this.appGateway.notifyNewFixedPriceRequest(serviceRequest);
+    } catch (error) {
+      console.error('Error enviando notificación WebSocket:', error);
+    }
+
+    return serviceRequest;
+  }
+
+  /**
+   * Find applications for a specific service request
+   */
+  async findApplicationsForRequest(serviceRequestId: number) {
+    return this.prisma.applications.findMany({
+      where: {
+        service_request_id: serviceRequestId
+      },
+      include: {
+        intrabbler: {
+          select: {
+            id: true,
+            name: true,
+            lastname: true,
+            phone_number: true,
+            email: true,
+            photo_url: true,
+          }
+        }
+      },
+      orderBy: {
+        created_at: 'desc'
       }
     });
   }

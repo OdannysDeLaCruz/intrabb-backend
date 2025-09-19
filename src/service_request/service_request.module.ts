@@ -4,10 +4,11 @@ import { ServiceRequestService } from './service_request.service';
 import { PrismaModule } from '../prisma/prisma.module';
 import { CacheModule } from '../cache/cache.module';
 import { CommonModule } from '../common/common.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 import { AppGateway } from '../app/app.gateway';
 
 @Module({
-  imports: [PrismaModule, CacheModule, CommonModule],
+  imports: [PrismaModule, CacheModule, CommonModule, NotificationsModule],
   controllers: [ServiceRequestController],
   providers: [ServiceRequestService, AppGateway],
   exports: [ServiceRequestService]

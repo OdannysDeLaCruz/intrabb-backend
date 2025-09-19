@@ -1,4 +1,4 @@
-import { Module, MiddlewareConsumer, RequestMethod } from '@nestjs/common';
+import { Module, MiddlewareConsumer } from '@nestjs/common';
 import { UsersModule } from './users/users.module';
 import { ServiceCategoriesModule } from './service_categories/service_categories.module';
 import { PrismaService } from './prisma/prisma.service';
@@ -14,10 +14,15 @@ import { ServiceRequestModule } from './service_request/service_request.module';
 import { VerifiableDocumentsModule } from './verifiable_documents/verifiable_documents.module';
 import { IntrabblersModule } from './intrabblers/intrabblers.module';
 import { PlatformMiddleware } from './common/middleware/platform.middleware';
-import { WebhookRawBodyMiddleware } from './common/middleware/webhook-raw-body.middleware';
 import { AppGateway } from './app/app.gateway';
 import { QuotationsModule } from './quotations/quotations.module';
 import { CommonModule } from './common/common.module';
+import { ApplicationsModule } from './applications/applications.module';
+import { AllyAvailabilityModule } from './ally-availability/ally-availability.module';
+import { CommissionSettingsModule } from './commission-settings/commission-settings.module';
+import { QueueModule } from './queue/queue.module';
+import { NotificationsModule } from './notifications/notifications.module';
+import { DeviceTokensModule } from './device-tokens/device-tokens.module';
 
 @Module({
   imports: [
@@ -42,7 +47,13 @@ import { CommonModule } from './common/common.module';
     VerifiableDocumentsModule,
     IntrabblersModule,
     QuotationsModule,
-    CommonModule
+    CommonModule,
+    ApplicationsModule,
+    AllyAvailabilityModule,
+    CommissionSettingsModule,
+    QueueModule,
+    NotificationsModule,
+    DeviceTokensModule
   ],
   controllers: [],
   providers: [
