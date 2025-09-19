@@ -48,7 +48,7 @@ export class WsAuthGuard implements CanActivate {
       };
 
       return true;
-    } catch (error) {
+    } catch {
       // Optionally disconnect the client
       client.disconnect();
       throw new WsException('Unauthorized');

@@ -3,7 +3,6 @@ import { Reflector } from '@nestjs/core';
 import { Request, Response } from 'express';
 import { SupabaseAuthService } from '../supabase-auth.service';
 import { IS_PUBLIC_KEY } from '../../common/decorators/public.decorator';
-import { User } from '@prisma/client';
 
 @Injectable()
 export class SupabaseAuthGuard implements CanActivate {

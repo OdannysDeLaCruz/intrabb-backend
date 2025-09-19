@@ -1,5 +1,4 @@
 import { Injectable } from '@nestjs/common';
-import { CreateServiceCategoryDto } from './dto/create-service_category.dto';
 import { UpdateServiceCategoryDto } from './dto/update-service_category.dto';
 import { SearchServiceCategoryDto } from './dto/search-service-category.dto';
 import { PrismaService } from 'src/prisma/prisma.service';
@@ -12,7 +11,7 @@ export class ServiceCategoriesService {
     private readonly cacheService: CacheService,
   ) {}
 
-  create(createServiceCategoryDto: CreateServiceCategoryDto) {
+  create() {
     // return this.prisma.serviceCategory.create({ data: createServiceCategoryDto });
   }
 
@@ -423,7 +422,7 @@ export class ServiceCategoriesService {
     // Try to get from cache first
     const cachedResult = await this.cacheService.get(cacheKey);
     if (cachedResult) {
-      return cachedResult;
+      // return cachedResult;
     }
 
     const result = await this.prisma.serviceCategory.findMany({
@@ -432,6 +431,56 @@ export class ServiceCategoriesService {
         parent_id: null, // Only categories without parent (parent categories)
       },
       include: {
+        _count: {
+          select: {
+            service_requests: true,
+          },
+        },
+      },
+      orderBy: [
+        {
+          service_requests: {
+            _count: 'desc',
+          },
+        },
+        {
+          name: 'asc',
+        },
+      ],
+    });
+
+    // Cache the result for 10 minutes
+    await this.cacheService.set(cacheKey, result, 600);
+
+    return result;
+  }
+
+  async findFixedPriceCategories() {
+    // Generate cache key
+    const cacheKey = 'service_categories:fixed_price';
+    
+    // Try to get from cache first
+    const cachedResult = await this.cacheService.get(cacheKey);
+    if (cachedResult) {
+      return cachedResult;
+    }
+
+    const result = await this.prisma.serviceCategory.findMany({
+      where: {
+        is_active: true,
+        has_fixed_price: true,
+        fixed_price_amount: {
+          not: null
+        }
+      },
+      include: {
+        parent: {
+          select: {
+            id: true,
+            name: true,
+            slug: true,
+          },
+        },
         _count: {
           select: {
             service_requests: true,

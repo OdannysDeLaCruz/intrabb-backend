@@ -1,7 +1,6 @@
 import { Injectable, NestMiddleware, BadRequestException } from '@nestjs/common';
 import { Request, Response, NextFunction } from 'express';
 import { Reflector } from '@nestjs/core';
-import { SKIP_PLATFORM_KEY } from '../decorators/skip-platform.decorator';
 
 export interface RequestWithPlatform extends Request {
   platform?: string;

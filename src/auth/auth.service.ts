@@ -1,8 +1,8 @@
-import { Injectable, BadRequestException, InternalServerErrorException, UnauthorizedException } from '@nestjs/common';
+import { Injectable, BadRequestException, InternalServerErrorException } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
-import { PLATFORM_ALIADOS, PLATFORM_CLIENT } from 'src/constants';
+import { PLATFORM_CLIENT } from 'src/constants';
 
 @Injectable()
 export class AuthService {
@@ -41,7 +41,7 @@ export class AuthService {
         message: 'Perfil actualizado exitosamente',
         user: updatedUser
       }
-    } catch (error) {
+    } catch {
       return {
         success: false,
         message: 'Error al actualizar el perfil',
@@ -80,7 +80,7 @@ export class AuthService {
         message: 'Usuario autenticado exitosamente',
         user
       }
-    } catch (error) {
+    } catch {
       return {
         success: false,
         message: 'Error al obtener datos del usuario',
@@ -175,6 +175,7 @@ export class AuthService {
         }
       }
     } catch (error) {
+      console.error('Error during sign-in validation:', error);
       throw error
     }
 

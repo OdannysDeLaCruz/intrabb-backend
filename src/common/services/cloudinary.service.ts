@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { v2 as cloudinary } from 'cloudinary';
 
@@ -81,7 +81,7 @@ export class CloudinaryService {
       }
 
       // Remover la base URL y obtener el public_id
-      let publicId = url.replace(baseUrl, '');
+      const publicId = url.replace(baseUrl, '');
       
       // Remover transformaciones si las hay (todo lo que esté entre el baseUrl y el public_id)
       const parts = publicId.split('/');

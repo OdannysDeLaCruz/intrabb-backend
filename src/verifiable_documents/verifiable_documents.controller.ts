@@ -8,12 +8,10 @@ import {
   Headers,
   HttpException,
   HttpStatus,
-  UseGuards,
   Req,
 } from '@nestjs/common';
 import { VerifiableDocumentsService } from './verifiable_documents.service';
 import { IntrabblersService } from '../intrabblers/intrabblers.service';
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { Public, SkipPlatform } from '../common/decorators';
 import { Request } from 'express';
 import * as crypto from 'crypto';

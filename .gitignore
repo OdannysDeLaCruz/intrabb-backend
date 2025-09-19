@@ -60,3 +60,6 @@ report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 # Local development files
 docker-compose.yml
 notas.txt
+
+# Firebase
+intrabb-platform-firebase-adminsdk-fbsvc-9561f71bb7.json

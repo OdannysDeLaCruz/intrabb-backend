@@ -11,7 +11,7 @@ export class ServiceCategoriesController {
 
   @Post()
   create(@Body() createServiceCategoryDto: CreateServiceCategoryDto) {
-    return this.serviceCategoriesService.create(createServiceCategoryDto);
+    // return this.serviceCategoriesService.create(createServiceCategoryDto);
   }
 
   @Get()
@@ -39,6 +39,12 @@ export class ServiceCategoriesController {
   getParentCategories() {
     console.log('🔥 [DEBUG] getParentCategories endpoint hit - should be public');
     return this.serviceCategoriesService.findParentCategories();
+  }
+
+  @Get('fixed-price')
+  @Public()
+  getFixedPriceCategories() {
+    return this.serviceCategoriesService.findFixedPriceCategories();
   }
 
   @Get(':id')

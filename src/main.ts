@@ -1,10 +1,11 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe, VersioningType } from '@nestjs/common';
 import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
+import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import cookieParser from 'cookie-parser';
 import morgan from 'morgan';
 // import { json } from 'express';
-import express, { raw } from 'express';
+import express from 'express';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
@@ -62,6 +63,30 @@ async function bootstrap() {
       transform: true
     })
   );
+
+  // Configuración de Swagger
+  const config = new DocumentBuilder()
+    .setTitle('API InTrab')
+    .setDescription('Documentación de la API de InTrab - Plataforma de servicios que conecta clientes con profesionales')
+    .setVersion('1.0')
+    .addBearerAuth()
+    .addTag('auth', 'Endpoints de autenticación')
+    .addTag('users', 'Gestión de usuarios')
+    .addTag('service-categories', 'Gestión de categorías de servicios')
+    .addTag('service-requests', 'Solicitudes de servicios (cotizaciones y precio fijo)')
+    .addTag('applications', 'Aplicaciones de profesionales para servicios de precio fijo')
+    .addTag('ally-availability', 'Gestión de disponibilidad de profesionales')
+    .addTag('commission-settings', 'Configuración de comisiones')
+    .addTag('quotations', 'Cotizaciones para solicitudes de servicios')
+    .addTag('appointments', 'Citas de servicios')
+    .build();
+  
+  const document = SwaggerModule.createDocument(app, config);
+  SwaggerModule.setup('api/docs', app, document, {
+    swaggerOptions: {
+      persistAuthorization: true,
+    },
+  });
 
   // const configService = app.get(ConfigService);
   const port = 3002;
