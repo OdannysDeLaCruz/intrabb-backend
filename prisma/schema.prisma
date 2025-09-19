@@ -46,6 +46,7 @@ enum QuotationStatus {
   accepted
   rejected
   cancelled
+  not_selected  // Cuando el cliente eligió otra cotización
 
   @@map("quotation_status")
 }
@@ -75,11 +76,37 @@ enum AppointmentStatus {
 // Status for service requests.
 enum ServiceRequestStatus {
   receiving_offers
+  receiving_applications
   offer_accepted
   cancelled
   completed
 
   @@map("service_request_status")
+}
+
+// Type of service request
+enum RequestType {
+  quotation_based  // Flujo actual con cotizaciones
+  fixed_price      // Nuevo flujo con precio fijo
+
+  @@map("request_type")
+}
+
+// Status for applications (fixed price services)
+enum ApplicationStatus {
+  pending   // Aplicación enviada, esperando selección del cliente
+  selected  // Cliente seleccionó este aliado
+  rejected  // Cliente no seleccionó este aliado (automático al seleccionar otro)
+
+  @@map("application_status")
+}
+
+// Service type for commission settings
+enum CommissionServiceType {
+  quotation_based  // Para servicios con cotización
+  fixed_price      // Para servicios de precio fijo
+
+  @@map("commission_service_type")
 }
 
 // Modality of a service appointment.
@@ -247,6 +274,12 @@ model User {
   commission_payments_processed CommissionPayment[] @relation("CommissionProcessor")
   incidents_reported        AppointmentIncident[] @relation("IncidentReporter")
   incidents_resolved        AppointmentIncident[] @relation("IncidentResolver")
+  
+  // Nuevas relaciones para fixed price services
+  applications              Applications[]
+  ally_availability         AllyAvailability[]
+  device_tokens            DeviceToken[]
+  failed_notifications     FailedNotification[]
 
   @@map("users")
 }
@@ -354,7 +387,13 @@ model ServiceCategory {
   is_active          Boolean @default(true)
   icon_url           String?
   cover_photo_url    String?           
-  parent_id          Int?     
+  parent_id          Int?
+  
+  // Nuevos campos para servicios de precio fijo
+  has_fixed_price    Boolean @default(false)     // Indica si es servicio de precio fijo
+  fixed_price_amount Decimal?                    // Precio fijo en COP (null si has_fixed_price = false)
+  price_currency     String @default("COP")     // Moneda del precio fijo
+  
   created_at         DateTime @default(now()) 
   updated_at         DateTime @updatedAt           
 
@@ -368,6 +407,7 @@ model ServiceCategory {
   @@index([is_active])
   @@index([parent_id])
   @@index([name, is_active])
+  @@index([has_fixed_price])
   @@map("service_categories")
 }
 
@@ -376,27 +416,39 @@ model ServiceRequest {
   client_id               String @db.Uuid // debe tener role='client'
   service_category_id     Int                  
   title                   String
-  location_address_id     Int
+  location_address_id     Int?              // Opcional para fixed_price inicialmente
   description             String?
   preferred_date          DateTime?   
   status                  ServiceRequestStatus @default(receiving_offers)
   accepted_counter_offer_id Int? @unique // referencia a la contra oferta aceptada
   initial_budget_id       Int? @unique // referencia al presupuesto inicial del cliente
   is_active               Boolean @default(true)
+  
+  // Nuevo campo para distinguir tipos de servicio
+  request_type            RequestType @default(quotation_based) // quotation_based, fixed_price
+  
+  // Campos específicos para fixed_price
+  amount                  Decimal?         // Monto del servicio de precio fijo
+  currency                String @default("COP") // Moneda del servicio
+  
   created_at              DateTime @default(now()) 
   updated_at              DateTime @updatedAt
 
   client                  User @relation(fields: [client_id], references: [id])
   service_category        ServiceCategory @relation(fields: [service_category_id], references: [id])
-  location                UserAddress @relation(fields: [location_address_id], references: [id])
+  location                UserAddress? @relation(fields: [location_address_id], references: [id])
   parameters              ServiceRequestParameterValue[]
-  quotations              Quotations[]
+  quotations              Quotations[]      // Solo para quotation_based
   counter_offers          CounterOffer[]
   accepted_counter_offer  CounterOffer? @relation("AcceptedCounterOffer", fields: [accepted_counter_offer_id], references: [id])
   initial_budget          InitialBudget? @relation(fields: [initial_budget_id], references: [id])
   appointment             ServiceAppointment? // puede tener entre cero y uno
   images                  ServiceRequestImage[] // imágenes opcionales (máx. 5)
+  
+  // Nueva relación para fixed_price
+  applications            Applications[]    // Solo para fixed_price
 
+  @@index([request_type])
   @@map("service_requests")
 }
 
@@ -537,14 +589,19 @@ model ServiceAppointment {
   client_id             String @db.Uuid
   intrabbler_id         String @db.Uuid
   service_request_id    Int @unique
-  quotation_id          Int @unique
   location_address_id   Int
+  
+  // Campos opcionales dependiendo del tipo de servicio
+  quotation_id          Int? @unique      // FK a Quotations (para quotation_based) - unique for 1:1
+  application_id        Int? @unique      // FK a Applications (para fixed_price) - unique for 1:1
+  
   created_at            DateTime @default(now()) 
   updated_at            DateTime @updatedAt
 
   client User @relation("ClientAppointments", fields: [client_id], references: [id])
   intrabbler User @relation("ProfessionalAppointments", fields: [intrabbler_id], references: [id])
-  quotation Quotations @relation(fields: [quotation_id], references: [id])
+  quotation Quotations? @relation(fields: [quotation_id], references: [id])
+  application Applications? @relation(fields: [application_id], references: [id])
   location_address UserAddress @relation("LocationAddress", fields: [location_address_id], references: [id])
   service_request ServiceRequest @relation(fields: [service_request_id], references: [id])
   reviews Review[]
@@ -715,4 +772,108 @@ model CommissionPayment {
   payment_method        PaymentMethod @relation(fields: [payment_method_id], references: [id])
   
   @@map("commission_payments")
+}
+
+// Nuevo modelo: Applications para servicios de precio fijo
+model Applications {
+  id                    Int @id @default(autoincrement())
+  service_request_id    Int                          // FK a ServiceRequest
+  intrabbler_id         String @db.Uuid             // FK a User (aliado)
+  message               String?                      // Mensaje opcional del aliado
+  status                ApplicationStatus @default(pending) // pending, selected, rejected
+  applied_at            DateTime @default(now())     // Cuando aplicó
+  selected_at           DateTime?                    // Cuando fue seleccionado
+  created_at            DateTime @default(now()) 
+  updated_at            DateTime @updatedAt
+
+  service_request       ServiceRequest @relation(fields: [service_request_id], references: [id])
+  intrabbler           User @relation(fields: [intrabbler_id], references: [id])
+  service_appointment  ServiceAppointment?          // Una vez seleccionado y pagado
+
+  @@unique([service_request_id, intrabbler_id])     // Un aliado solo puede aplicar una vez por servicio
+  @@map("applications")
+}
+
+// Nuevo modelo para horarios de disponibilidad
+model AllyAvailability {
+  id                Int @id @default(autoincrement())
+  intrabbler_id     String @db.Uuid                 // FK a User (aliado)
+  day_of_week       Int                             // 0=Domingo, 1=Lunes, ..., 6=Sábado
+  start_time        String                          // Formato "HH:mm" (ej: "09:00")
+  end_time          String                          // Formato "HH:mm" (ej: "18:00")
+  is_active         Boolean @default(true)          // Para deshabilitar horarios temporalmente
+  created_at        DateTime @default(now())
+  updated_at        DateTime @updatedAt
+
+  intrabbler        User @relation(fields: [intrabbler_id], references: [id])
+  
+  @@unique([intrabbler_id, day_of_week, start_time, end_time]) // Evitar duplicados
+  @@map("ally_availability")
+}
+
+// Nuevo modelo para configuración de comisiones
+model CommissionSettings {
+  id                    Int @id @default(autoincrement())
+  service_type          CommissionServiceType        // quotation_based, fixed_price
+  commission_percentage Decimal                      // Porcentaje de comisión (ej: 10.5 = 10.5%)
+  min_commission_amount Decimal?                     // Comisión mínima en COP
+  max_commission_amount Decimal?                     // Comisión máxima en COP
+  is_active            Boolean @default(true)        // Para deshabilitar configuraciones
+  created_at           DateTime @default(now())
+  updated_at           DateTime @updatedAt
+
+  @@map("commission_settings")
+}
+
+// Modelo para almacenar tokens de dispositivos FCM/Expo
+model DeviceToken {
+  id            Int       @id @default(autoincrement())
+  user_id       String    @db.Uuid
+  fcm_token     String    @unique
+  expo_token    String?
+  platform      String    @default("unknown")
+  device_id     String?
+  app_version   String?
+  is_active     Boolean   @default(true)
+  last_used_at  DateTime?
+  created_at    DateTime  @default(now())
+  updated_at    DateTime  @updatedAt
+
+  // Relación con el usuario
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  // Índices
+  @@index([user_id])
+  @@index([is_active])
+  @@map("device_tokens")
+}
+
+// Modelo para almacenar notificaciones fallidas y gestionar reintentos
+model FailedNotification {
+  id                Int       @id @default(autoincrement())
+  user_id           String    @db.Uuid
+  notification_type String    // 'nueva_oportunidad', 'cotizacion_aceptada', etc.
+  event             String    // evento original del WebSocket
+  payload           Json      // payload completo de la notificación
+  attempts          Int       @default(0)
+  max_attempts      Int       @default(3)
+  last_error        String?   // último error encontrado
+  next_retry_at     DateTime  // cuándo intentar de nuevo
+  priority          String    @default("normal") // 'low', 'normal', 'high', 'critical'
+  is_resolved       Boolean   @default(false) // si finalmente se envió exitosamente
+  resolved_at       DateTime? // cuándo se resolvió
+  resolved_method   String?   // 'websocket', 'push', 'sms', 'email'
+  created_at        DateTime  @default(now())
+  updated_at        DateTime  @updatedAt
+
+  // Relación con el usuario
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  // Índices para optimizar queries
+  @@index([user_id])
+  @@index([is_resolved])
+  @@index([next_retry_at])
+  @@index([notification_type])
+  @@index([priority])
+  @@map("failed_notifications")
 }

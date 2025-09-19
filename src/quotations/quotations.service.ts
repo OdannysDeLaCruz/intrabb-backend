@@ -1,10 +1,10 @@
 import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AppGateway } from '../app/app.gateway';
+import { NotificationsService } from '../notifications/notifications.service';
 import { CreateQuotationDto } from './dto/create-quotation.dto';
 import { UpdateQuotationDto } from './dto/update-quotation.dto';
 import { AcceptQuotationDto } from './dto/accept-quotation.dto';
-import { Quotations, QuotationStatus } from '@prisma/client';
 
 @Injectable()
 export class QuotationsService {
@@ -12,6 +12,7 @@ export class QuotationsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly appGateway: AppGateway,
+    private readonly notificationsService: NotificationsService,
   ) {
   }
 
@@ -165,13 +166,37 @@ export class QuotationsService {
       }
     };
 
-    // Send real-time notification to users watching this request
+    // Enviar notificación híbrida al cliente (WebSocket + Push)
     try {
-      await this.appGateway.notifyNewQuotation(service_request_id, notificationData);
-      console.log(`🔔 Nueva cotización ${result.quotation.id} notificada en tiempo real para solicitud ${service_request_id}`);
+      await this.notificationsService.sendHybridNotification(
+        serviceRequest.client.id,
+        'nueva_cotizacion',
+        {
+          title: 'Nueva Cotización Recibida',
+          body: `Recibiste una nueva cotización para: ${serviceRequest.service_category.name}`,
+          data: {
+            type: 'nueva_cotizacion',
+            quotation_id: result.quotation.id.toString(),
+            service_request_id: service_request_id.toString(),
+            intrabbler_name: `${result.quotation.intrabbler.name} ${result.quotation.intrabbler.lastname}`,
+            estimated_total: result.quotation.estimated_price.estimated_total.toString(),
+            service_category: serviceRequest.service_category.name,
+            timestamp: new Date().toISOString()
+          }
+        },
+        {
+          priority: 'high', // Importante para el cliente
+          websocketCallback: async (userId, event, data) => {
+            // Mantener también la notificación a la sala para usuarios que estén viendo en tiempo real
+            return await this.appGateway.notifyNewQuotation(service_request_id, notificationData);
+          }
+        }
+      );
+
+      console.log(`🔔 Nueva cotización ${result.quotation.id} notificada híbrida al cliente ${serviceRequest.client.name}`);
     } catch (error) {
       // Don't fail the quotation creation if notification fails
-      console.error('Error sending real-time notification:', error);
+      console.error('Error sending hybrid notification:', error);
     }
 
     return {
@@ -494,6 +519,36 @@ export class QuotationsService {
         data: { status: 'accepted' }
       });
 
+      // 2.1. Obtener todas las otras cotizaciones pendientes para marcarlas como no seleccionadas
+      const otherQuotations = await tx.quotations.findMany({
+        where: {
+          service_request_id,
+          id: { not: quotation_id },
+          status: 'pending'
+        },
+        include: {
+          intrabbler: {
+            select: {
+              id: true,
+              name: true,
+              lastname: true
+            }
+          }
+        }
+      });
+
+      // 2.2. Marcar otras cotizaciones como 'not_selected'
+      if (otherQuotations.length > 0) {
+        await tx.quotations.updateMany({
+          where: {
+            service_request_id,
+            id: { not: quotation_id },
+            status: 'pending'
+          },
+          data: { status: 'not_selected' }
+        });
+      }
+
       // 3. Crear la cita
       let durationMinutes = 0;
       const pricingType = quotation.estimated_price.pricing_type;
@@ -580,25 +635,96 @@ export class QuotationsService {
         commissionPayment,
         walletTransaction,
         newBalance,
-        hasEnoughBalance
+        hasEnoughBalance,
+        otherQuotations
       };
     });
 
-    // Notificar al aliado por WebSocket
+    // Notificar al aliado SELECCIONADO con sistema híbrido (WebSocket + Push)
     try {
-      await this.appGateway.notifyQuotationAcceptedToIntrabbler(quotation.intrabbler.id, {
-        quotation_id,
-        service_request_id,
-        appointment_id: result.appointment.id,
-        message: 'Tu cotización ha sido aceptada y se ha creado una cita',
-        appointment_date: result.appointment.appointment_date,
-        client: serviceRequest.client,
-        commission_charged: result.hasEnoughBalance,
-        commission_amount: commissionAmount,
-        new_balance: result.newBalance,
-      });
+      await this.notificationsService.sendHybridNotification(
+        quotation.intrabbler.id,
+        'cotizacion_aceptada',
+        {
+          title: '🎉 ¡Cotización Aceptada!',
+          body: `${serviceRequest.client.name} ${serviceRequest.client.lastname} aceptó tu cotización`,
+          data: {
+            type: 'cotizacion_aceptada',
+            quotation_id: quotation_id.toString(),
+            service_request_id: service_request_id.toString(),
+            appointment_id: result.appointment.id.toString(),
+            client_name: `${serviceRequest.client.name} ${serviceRequest.client.lastname}`,
+            commission_amount: commissionAmount.toString(),
+            appointment_date: result.appointment.appointment_date.toISOString(),
+            new_balance: result.newBalance.toString(),
+            timestamp: new Date().toISOString()
+          }
+        },
+        {
+          priority: 'critical', // ¡Muy importante que se entere!
+          websocketCallback: async (userId, event, data) => {
+            return await this.appGateway.notifyQuotationAcceptedToIntrabbler(userId, {
+              quotation_id,
+              service_request_id,
+              appointment_id: result.appointment.id,
+              message: 'Tu cotización ha sido aceptada y se ha creado una cita',
+              appointment_date: result.appointment.appointment_date,
+              client: serviceRequest.client,
+              commission_charged: result.hasEnoughBalance,
+              commission_amount: commissionAmount,
+              new_balance: result.newBalance,
+            });
+          }
+        }
+      );
+
+      console.log(`✅ Notificación híbrida enviada a aliado seleccionado: ${quotation.intrabbler.name} ${quotation.intrabbler.lastname}`);
     } catch (error) {
-      console.error('Error sending intrabbler notification:', error);
+      console.error('Error sending accepted quotation notification:', error);
+    }
+
+    // Notificar a los aliados NO SELECCIONADOS
+    if (result.otherQuotations && result.otherQuotations.length > 0) {
+      console.log(`🔔 Notificando a ${result.otherQuotations.length} aliados que sus cotizaciones no fueron seleccionadas...`);
+
+      for (const rejectedQuotation of result.otherQuotations) {
+        try {
+          await this.notificationsService.sendHybridNotification(
+            rejectedQuotation.intrabbler.id,
+            'cotizacion_no_seleccionada',
+            {
+              title: 'Cotización no seleccionada',
+              body: 'El cliente eligió otra cotización para su servicio',
+              data: {
+                type: 'cotizacion_no_seleccionada',
+                quotation_id: rejectedQuotation.id,
+                service_request_id,
+                client_name: `${serviceRequest.client.name} ${serviceRequest.client.lastname}`,
+                reason: 'client_selected_other',
+                timestamp: new Date().toISOString()
+              }
+            },
+            {
+              priority: 'normal',
+              websocketCallback: async (userId, event, data) => {
+                return await this.appGateway.notifyQuotationNotSelectedToIntrabbler(userId, {
+                  quotation_id: rejectedQuotation.id,
+                  service_request_id,
+                  message: 'El cliente eligió otra cotización para su servicio',
+                  client_name: `${serviceRequest.client.name} ${serviceRequest.client.lastname}`,
+                  reason: 'client_selected_other',
+                  timestamp: new Date().toISOString()
+                });
+              }
+            }
+          );
+
+          const aliadoName = `${rejectedQuotation.intrabbler.name} ${rejectedQuotation.intrabbler.lastname}`;
+          console.log(`✅ Notificación enviada a ${aliadoName} sobre cotización no seleccionada`);
+        } catch (error) {
+          console.error(`❌ Error notificando a aliado ${rejectedQuotation.intrabbler.id}:`, error);
+        }
+      }
     }
 
     return {

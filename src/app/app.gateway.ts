@@ -17,7 +17,7 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect {
   constructor(private readonly cacheService: CacheService) {}
 
   @SubscribeMessage('message')
-  handleMessage(client: any, payload: any): string {
+  handleMessage(): string {
     return 'Hello world!';
   }
 
@@ -83,7 +83,7 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
   }
 
-  async handleConnection(client: Socket, ...args: any[]) {
+  async handleConnection(client: Socket) {
     try {
       console.log('🔌 Nueva conexión WebSocket recibida:', client.id);
       
@@ -220,13 +220,71 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect {
     return this.notifyAliado(intrabberId, 'cotizacion_aceptada', notificationData);
   }
 
-  // Método de prueba para verificar conectividad
-  async testNotification(intrabberId: string) {
-    const testData = {
-      message: 'Esta es una notificación de prueba',
-      timestamp: new Date().toISOString(),
-    };
-    return this.notifyAliado(intrabberId, 'test_notification', testData);
+  // Método específico para notificar al aliado que su cotización NO fue seleccionada
+  async notifyQuotationNotSelectedToIntrabbler(intrabberId: string, notificationData: any) {
+    return this.notifyAliado(intrabberId, 'cotizacion_no_seleccionada', notificationData);
   }
+
+  // NUEVOS MÉTODOS PARA SERVICIOS DE PRECIO FIJO
+
+  // Método para notificar nueva solicitud de precio fijo a aliados
+  async notifyNewFixedPriceRequest(serviceRequestData: any) {
+    // Obtener aliados online y notificarles
+    const onlineAliados = await this.getOnlineAliados();
+    
+    for (const aliadoId of onlineAliados) {
+      await this.notifyAliado(aliadoId, 'new_fixed_price_request', {
+        service_request: serviceRequestData,
+        message: 'Nueva solicitud de servicio de precio fijo disponible',
+        timestamp: new Date().toISOString()
+      });
+    }
+    
+    console.log(`🔔 Nueva solicitud de precio fijo notificada a ${onlineAliados.length} aliados online`);
+    return onlineAliados.length;
+  }
+
+  // Método para notificar nueva aplicación al cliente
+  async notifyNewApplication(requestId: number, applicationData: any) {
+    return this.notifyRequestRoom(requestId, 'new_application', {
+      application: applicationData,
+      message: 'Nuevo profesional ha aplicado para tu servicio',
+      timestamp: new Date().toISOString()
+    });
+  }
+
+  // Método para notificar resultado de aplicación al aliado (seleccionado/rechazado)
+  async notifyApplicationResult(intrabberId: string, applicationData: any, isSelected: boolean) {
+    const event = isSelected ? 'application_selected' : 'application_rejected';
+    const message = isSelected 
+      ? 'Tu aplicación ha sido seleccionada' 
+      : 'Tu aplicación no fue seleccionada';
+
+    return this.notifyAliado(intrabberId, event, {
+      application: applicationData,
+      is_selected: isSelected,
+      message,
+      timestamp: new Date().toISOString()
+    });
+  }
+
+  // Método para notificar confirmación de pago
+  async notifyPaymentConfirmed(requestId: number, paymentData: any) {
+    return this.notifyRequestRoom(requestId, 'payment_confirmed', {
+      payment: paymentData,
+      message: 'Pago confirmado exitosamente',
+      timestamp: new Date().toISOString()
+    });
+  }
+
+  // Método para notificar al aliado que el pago fue confirmado y puede proceder
+  async notifyPaymentConfirmedToIntrabbler(intrabberId: string, paymentData: any) {
+    return this.notifyAliado(intrabberId, 'payment_confirmed_proceed', {
+      payment: paymentData,
+      message: 'El cliente ha pagado. Puedes proceder con el servicio',
+      timestamp: new Date().toISOString()
+    });
+  }
+
 
 }
