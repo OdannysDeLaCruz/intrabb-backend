@@ -1,12 +1,16 @@
 import { Injectable, BadRequestException, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { CompleteProfileDto } from './dto/complete-profile.dto';
 import { UpdateAppointmentStatusDto } from './dto/update-appointment-status.dto';
 import { ReportIncidentDto } from './dto/report-incident.dto';
 
 @Injectable()
 export class IntrabblersService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private notificationsService: NotificationsService,
+  ) {}
 
   async getProfile(userId: string) {
     const intrabblerProfile = await this.prisma.intrabblerProfile.findUnique({
@@ -351,11 +355,39 @@ export class IntrabblersService {
   }
 
   async updateAppointmentStatus(intrabblerId: string, appointmentId: string, updateData: UpdateAppointmentStatusDto) {
-    // Verificar que el appointment existe y pertenece al intrabbler
+    // Verificar que el appointment existe y pertenece al intrabbler, incluyendo datos del cliente e intrabbler
     const appointment = await this.prisma.serviceAppointment.findFirst({
       where: {
         id: Number(appointmentId),
         intrabbler_id: intrabblerId
+      },
+      include: {
+        client: {
+          select: {
+            id: true,
+            name: true,
+            lastname: true,
+            email: true
+          }
+        },
+        intrabbler: {
+          select: {
+            id: true,
+            name: true,
+            lastname: true
+          }
+        },
+        service_request: {
+          select: {
+            id: true,
+            title: true,
+            service_category: {
+              select: {
+                name: true
+              }
+            }
+          }
+        }
       }
     });
 
@@ -380,6 +412,133 @@ export class IntrabblersService {
       where: { id: Number(appointmentId) },
       data: updateFields
     });
+
+    // Enviar notificaciones push al cliente según el estado
+    console.log(`📋 DEBUG - Status actualizado: ${updateData.status}`);
+
+    try {
+      const intrabblerName = `${appointment.intrabbler.name} ${appointment.intrabbler.lastname}`;
+
+      if (updateData.status === 'confirmed') {
+        // ESTADO: Profesional en camino
+        console.log(`🚗 DEBUG - Enviando notificación "en camino" al cliente ${appointment.client.id}`);
+
+        const result = await this.notificationsService.sendHybridNotification(
+          appointment.client.id,
+          'profesional_en_camino',
+          {
+            title: '🚗 Profesional en camino',
+            body: `${intrabblerName} va en camino a tu ubicación`,
+            data: {
+              type: 'profesional_en_camino',
+              appointment_id: appointmentId,
+              service_request_id: appointment.service_request.id.toString(),
+              intrabbler_name: intrabblerName,
+              service_category: appointment.service_request.service_category.name,
+              timestamp: new Date().toISOString()
+            }
+          },
+          {
+            priority: 'high',
+            bypassWebSocket: true // Solo Push, NO WebSocket
+          }
+        );
+
+        console.log(`🚗 Resultado notificación "en camino":`, result);
+        console.log(`✅ Notificación "en camino" enviada al cliente ${appointment.client.name} ${appointment.client.lastname}`);
+
+      } else if (updateData.status === 'in_progress') {
+        // ESTADO: Trabajo iniciado
+        console.log(`🔧 DEBUG - Enviando notificación "trabajo iniciado" al cliente ${appointment.client.id}`);
+
+        const result = await this.notificationsService.sendHybridNotification(
+          appointment.client.id,
+          'trabajo_iniciado',
+          {
+            title: '🔧 Trabajo iniciado',
+            body: `${intrabblerName} ya llegó a tu ubicación e inició el trabajo`,
+            data: {
+              type: 'trabajo_iniciado',
+              appointment_id: appointmentId,
+              service_request_id: appointment.service_request.id.toString(),
+              intrabbler_name: intrabblerName,
+              service_category: appointment.service_request.service_category.name,
+              timestamp: new Date().toISOString()
+            }
+          },
+          {
+            priority: 'high',
+            bypassWebSocket: true // Solo Push, NO WebSocket
+          }
+        );
+
+        console.log(`🔧 Resultado notificación "trabajo iniciado":`, result);
+        console.log(`✅ Notificación "trabajo iniciado" enviada al cliente ${appointment.client.name} ${appointment.client.lastname}`);
+
+      } else if (updateData.status === 'completed') {
+        // ESTADO: Trabajo finalizado
+        console.log(`✅ DEBUG - Enviando notificación "trabajo finalizado" al cliente ${appointment.client.id}`);
+
+        const result = await this.notificationsService.sendHybridNotification(
+          appointment.client.id,
+          'trabajo_finalizado',
+          {
+            title: '✅ Trabajo finalizado',
+            body: `${intrabblerName} ha completado el trabajo. ¡Por favor califica el servicio!`,
+            data: {
+              type: 'trabajo_finalizado',
+              appointment_id: appointmentId,
+              service_request_id: appointment.service_request.id.toString(),
+              intrabbler_name: intrabblerName,
+              service_category: appointment.service_request.service_category.name,
+              timestamp: new Date().toISOString()
+            }
+          },
+          {
+            priority: 'critical', // Muy importante para calificar
+            bypassWebSocket: true // Solo Push, NO WebSocket
+          }
+        );
+
+        console.log(`✅ Resultado notificación "trabajo finalizado":`, result);
+        console.log(`✅ Notificación "trabajo finalizado" enviada al cliente ${appointment.client.name} ${appointment.client.lastname}`);
+
+      } else if (updateData.status === 'cancelled') {
+        // ESTADO: Cita cancelada - Necesitamos determinar quién canceló
+        console.log(`❌ DEBUG - Enviando notificación "cita cancelada" al cliente ${appointment.client.id}`);
+
+        // Por ahora asumimos que el aliado canceló (se puede mejorar pasando quien cancela)
+        const result = await this.notificationsService.sendHybridNotification(
+          appointment.client.id,
+          'cita_cancelada',
+          {
+            title: '❌ Cita cancelada',
+            body: `${intrabblerName} ha cancelado la cita. ${updateData.cancelation_reason ? 'Motivo: ' + updateData.cancelation_reason : ''}`,
+            data: {
+              type: 'cita_cancelada',
+              appointment_id: appointmentId,
+              service_request_id: appointment.service_request.id.toString(),
+              intrabbler_name: intrabblerName,
+              service_category: appointment.service_request.service_category.name,
+              cancelation_reason: updateData.cancelation_reason || 'No especificado',
+              cancelled_by: 'intrabbler', // TODO: determinar dinámicamente
+              timestamp: new Date().toISOString()
+            }
+          },
+          {
+            priority: 'high',
+            bypassWebSocket: true // Solo Push, NO WebSocket
+          }
+        );
+
+        console.log(`❌ Resultado notificación "cita cancelada":`, result);
+        console.log(`✅ Notificación "cita cancelada" enviada al cliente ${appointment.client.name} ${appointment.client.lastname}`);
+      }
+
+    } catch (error) {
+      console.error(`❌ Error enviando notificación para estado ${updateData.status}:`, error);
+      console.error('❌ Stack trace:', error.stack);
+    }
 
     // Retornar el appointment actualizado con todos los detalles
     return this.getAppointmentDetail(intrabblerId, appointmentId);
