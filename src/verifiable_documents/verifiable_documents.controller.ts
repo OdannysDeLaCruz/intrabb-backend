@@ -190,6 +190,7 @@ export class VerifiableDocumentsController {
       console.log('Mapped status:', data.status, '->', documentStatus);
 
       const documentsToCreate = [];
+      let selfieUrl: string | null = null;
 
       // 6. Procesar front_image y back_image
       if (data.decision.id_verification?.front_image) {
@@ -210,9 +211,10 @@ export class VerifiableDocumentsController {
 
       // 7. Procesar selfie (reference_image)
       if (data.decision.liveness?.reference_image) {
+        selfieUrl = data.decision.liveness.reference_image;
         documentsToCreate.push({
           documentTypeName: 'selfie',
-          documentUrl: data.decision.liveness.reference_image,
+          documentUrl: selfieUrl,
           status: documentStatus,
         });
       }
@@ -239,6 +241,12 @@ export class VerifiableDocumentsController {
         try {
           await this.intrabblersService.approveProfile(userId);
           console.log(`Profile approved for user: ${userId}`);
+
+          // Si hay selfie URL, actualizar photo_url del usuario
+          if (selfieUrl) {
+            await this.verifiableDocumentsService.updateUserPhotoUrl(userId, selfieUrl);
+            console.log(`Updated photo_url for user: ${userId} with selfie: ${selfieUrl}`);
+          }
         } catch (error) {
           console.error(`Error approving profile for user ${userId}:`, error);
           // No lanzar error para no afectar el flujo principal del webhook

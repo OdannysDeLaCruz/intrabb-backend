@@ -172,6 +172,13 @@ export class VerifiableDocumentsService {
     });
   }
 
+  async updateUserPhotoUrl(userId: string, photoUrl: string) {
+    return await this.prisma.user.update({
+      where: { id: userId },
+      data: { photo_url: photoUrl },
+    });
+  }
+
   async createVerifiableDocument(data: CreateVerifiableDocumentDto) {
     // Obtener el perfil de intrabbler (debe existir)
     const intrabblerProfile = await this.prisma.intrabblerProfile.findUnique({
