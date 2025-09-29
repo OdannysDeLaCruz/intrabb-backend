@@ -384,6 +384,7 @@ model ServiceCategory {
   name               String
   slug               String @unique
   description        String?
+  service_coverage   String? // html content
   is_active          Boolean @default(true)
   icon_url           String?
   cover_photo_url    String?           
