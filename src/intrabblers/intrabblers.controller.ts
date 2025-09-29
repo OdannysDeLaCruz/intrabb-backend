@@ -3,6 +3,7 @@ import { IntrabblersService } from './intrabblers.service';
 import { CompleteProfileDto } from './dto/complete-profile.dto';
 import { UpdateAppointmentStatusDto } from './dto/update-appointment-status.dto';
 import { ReportIncidentDto } from './dto/report-incident.dto';
+import { CanQuoteResponseDto } from './dto/can-quote-response.dto';
 
 @Controller('intrabblers')
 export class IntrabblersController {
@@ -119,6 +120,20 @@ export class IntrabblersController {
         message: 'Error al reportar el incidente',
         error: error.message
       };
+    }
+  }
+
+  @Get(':id/can-quote')
+  async canQuote(@Param('id') id: string): Promise<{ success: boolean; data: CanQuoteResponseDto; message: string }> {
+    try {
+      const result = await this.intrabblersService.canQuote(id);
+      return {
+        success: true,
+        data: result,
+        message: 'Verificación completada'
+      };
+    } catch (error) {
+      throw error;
     }
   }
 }

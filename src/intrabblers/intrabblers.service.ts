@@ -4,9 +4,12 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { CompleteProfileDto } from './dto/complete-profile.dto';
 import { UpdateAppointmentStatusDto } from './dto/update-appointment-status.dto';
 import { ReportIncidentDto } from './dto/report-incident.dto';
+import { CanQuoteResponseDto, CanQuoteStatus } from './dto/can-quote-response.dto';
 
 @Injectable()
 export class IntrabblersService {
+  private readonly MAXIMUM_DEBT_ALLOWED = -20000; // COP 20,000 negative balance
+
   constructor(
     private prisma: PrismaService,
     private notificationsService: NotificationsService,
@@ -570,5 +573,85 @@ export class IntrabblersService {
     });
 
     return incident;
+  }
+
+  async canQuote(userId: string): Promise<CanQuoteResponseDto> {
+    // Verificar que el usuario existe y está activo
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        is_active: true,
+        intrabbler_profile: {
+          select: {
+            id: true,
+            is_approved: true,
+          }
+        }
+      }
+    });
+
+    if (!user) {
+      throw new NotFoundException('Usuario no encontrado');
+    }
+
+    // Verificar si está activo
+    if (!user.is_active) {
+      return {
+        can_quote: false,
+        status: CanQuoteStatus.INACTIVE,
+        current_balance: 0,
+        message: 'Tu cuenta está inactiva. Contacta soporte para reactivarla.',
+        debt_limit: this.MAXIMUM_DEBT_ALLOWED
+      };
+    }
+
+    // Verificar si tiene perfil de intrabbler
+    if (!user.intrabbler_profile) {
+      throw new BadRequestException('No tienes un perfil de aliado');
+    }
+
+    // Verificar si está verificado/aprobado
+    if (!user.intrabbler_profile.is_approved) {
+      return {
+        can_quote: false,
+        status: CanQuoteStatus.NOT_VERIFIED,
+        current_balance: 0,
+        message: 'Tu perfil de aliado aún no ha sido verificado. Espera la aprobación para poder cotizar.',
+        debt_limit: this.MAXIMUM_DEBT_ALLOWED
+      };
+    }
+
+    // Verificar el balance de la wallet
+    const wallet = await this.prisma.wallet.findUnique({
+      where: { user_id: userId },
+      select: {
+        balance: true
+      }
+    });
+
+    if (!wallet) {
+      throw new BadRequestException('Wallet no encontrada');
+    }
+
+    // Verificar si está en mora máxima (>= -20000)
+    if (wallet.balance <= this.MAXIMUM_DEBT_ALLOWED) {
+      return {
+        can_quote: false,
+        status: CanQuoteStatus.IN_DEBT,
+        current_balance: wallet.balance,
+        message: `Tienes una mora de COP ${Math.abs(wallet.balance).toLocaleString('es-CO')}. Debes recargar tu cuenta para poder cotizar nuevamente.`,
+        debt_limit: this.MAXIMUM_DEBT_ALLOWED
+      };
+    }
+
+    // Si llegó aquí, puede cotizar
+    return {
+      can_quote: true,
+      status: CanQuoteStatus.ELIGIBLE,
+      current_balance: wallet.balance,
+      message: 'Puedes crear cotizaciones sin problemas.',
+      debt_limit: this.MAXIMUM_DEBT_ALLOWED
+    };
   }
 }
