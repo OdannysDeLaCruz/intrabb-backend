@@ -1,4 +1,4 @@
-import { IsString, IsNumber, IsOptional, IsEnum, Min, Max, IsNotEmpty } from 'class-validator';
+import { IsString, IsNumber, IsOptional, IsEnum, Min, Max, IsNotEmpty, IsBoolean } from 'class-validator';
 import { AvailabilityType, PricingType } from '@prisma/client';
 
 export class CreateEstimatedPriceDto {
@@ -39,4 +39,8 @@ export class CreateQuotationDto {
 
   @IsNotEmpty()
   estimated_price: CreateEstimatedPriceDto;
+
+  @IsOptional()
+  @IsBoolean()
+  accept_bonus?: boolean;
 }

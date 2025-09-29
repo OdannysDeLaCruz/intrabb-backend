@@ -29,9 +29,7 @@ export class QuotationsController {
   async create(@Body() createQuotationDto: CreateQuotationDto, @Request() req) {
     try {
       // Verify that the user has the role of 'intrabbler'
-      console.log(req.user);
       const userRole = req.user.role?.name;
-      console.log(userRole);
       if (userRole !== 'intrabbler') {
         throw new ForbiddenException('Solo los aliados pueden crear cotizaciones');
       }

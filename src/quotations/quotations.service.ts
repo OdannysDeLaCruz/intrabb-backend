@@ -17,7 +17,7 @@ export class QuotationsService {
   }
 
   async create(createQuotationDto: CreateQuotationDto, intrabblerUserId: string) {
-    const { estimated_price, service_request_id, ...quotationData } = createQuotationDto;
+    const { estimated_price, service_request_id, accept_bonus, ...quotationData } = createQuotationDto;
 
     // Verify that the service request exists and is accepting offers
     const serviceRequest = await this.prisma.serviceRequest.findUnique({
@@ -87,7 +87,7 @@ export class QuotationsService {
       throw new ForbiddenException('Su perfil de aliado debe estar aprobado para crear cotizaciones');
     }
 
-    // Verify wallet balance - cannot create quotations if debt is 20,000 COP or more
+    // Verificar wallet balance y manejar lógica de bono
     const aliado_wallet = await this.prisma.wallet.findUnique({
       where: { user_id: intrabblerUserId },
     });
@@ -97,13 +97,90 @@ export class QuotationsService {
     }
 
     const MAXIMUM_DEBT_ALLOWED = -20000; // COP 20,000 negative balance
-    if (aliado_wallet.balance < MAXIMUM_DEBT_ALLOWED) {
-      // throw new ForbiddenException('No puedes crear cotizaciones con una mora igual o mayor a COP 20.000. Tu balance actual es: COP ' + aliado_wallet.balance.toLocaleString('es-CO'));
-      throw new BadRequestException(`Tienes un saldo de COP ${aliado_wallet.balance.toLocaleString('es-CO')} por pagar. Recarga tu cuenta para que puedas enviar esta cotización.`)
+    const BONUS_AMOUNT = 20000; // COP 20,000 bonus
+
+    // Calcular comisión estimada (10% del precio total)
+    const estimatedCommission = (estimated_price.estimated_unit_quantity * estimated_price.estimated_unit_price) * (this.COMMISSION_PERCENTAGE / 100);
+
+    // Verificar si está en mora máxima (>= -20000) - NO puede cotizar
+    if (aliado_wallet.balance <= MAXIMUM_DEBT_ALLOWED) {
+      throw new BadRequestException(`Tienes una mora de COP ${Math.abs(aliado_wallet.balance).toLocaleString('es-CO')} por pagar. Recarga tu cuenta para que puedas enviar esta cotización.`);
+    }
+
+    // Casos donde necesita bono pero puede cotizar si lo acepta
+    const needsBonus = (aliado_wallet.balance === 0) ||
+                       (aliado_wallet.balance > 0 && aliado_wallet.balance < estimatedCommission);
+
+    // Verificar si después de descontar la comisión superaría el límite de deuda
+    const balanceAfterCommission = aliado_wallet.balance - estimatedCommission;
+
+    if (balanceAfterCommission < MAXIMUM_DEBT_ALLOWED) {
+      const debtExcess = Math.abs(balanceAfterCommission - MAXIMUM_DEBT_ALLOWED);
+      throw new BadRequestException(
+        `Tu saldo actual es COP ${aliado_wallet.balance.toLocaleString('es-CO')}, ` +
+        `la comisión es COP ${estimatedCommission.toLocaleString('es-CO')}, lo que te dejaría en COP ${balanceAfterCommission.toLocaleString('es-CO')}. ` +
+        `Tu cupo bono te permite cotizar hasta COP ${Math.abs(MAXIMUM_DEBT_ALLOWED).toLocaleString('es-CO')}. Recarga tu cuenta con al menos COP ${debtExcess.toLocaleString('es-CO')}.`
+      );
+    }
+
+    // Casos donde ya tiene deuda pero puede cotizar (ya recibió bono anteriormente)
+    const hasDebtButCanQuote = aliado_wallet.balance < 0 && balanceAfterCommission >= MAXIMUM_DEBT_ALLOWED;
+    console.log("needsBonus", needsBonus)
+    console.log("accept_bonus", accept_bonus)
+    console.log("needsBonus && !accept_bonus", needsBonus && !accept_bonus)
+    if (needsBonus && !accept_bonus) {
+      // El aliado puede usar un cupo de cotizaciones adelantadas
+      const message = aliado_wallet.balance === 0
+        ? `No tienes saldo suficiente para la comisión. Puedes usar tu cupo de cotizaciones adelantadas de COP ${BONUS_AMOUNT.toLocaleString('es-CO')} para enviar esta cotización. Podrás pagarlo luego recargando tu cuenta o con los pagos recibidos.`
+        : `Tu saldo actual (COP ${aliado_wallet.balance.toLocaleString('es-CO')}) no es suficiente para la comisión estimada (COP ${estimatedCommission.toLocaleString('es-CO')}). Puedes usar tu cupo de cotizaciones adelantadas de COP ${BONUS_AMOUNT.toLocaleString('es-CO')} para completar esta cotización. Podrás pagarlo luego recargando tu cuenta o con los pagos recibidos.`;
+      console.log('::::::::::::::::::::::', message);
+      throw new BadRequestException({
+        message,
+        error_code: 'BONUS_OFFER_AVAILABLE',
+        status_code: 400,
+        bonus_amount: BONUS_AMOUNT,
+        current_balance: aliado_wallet.balance,
+        commission_required: estimatedCommission
+      });
+    }
+
+    // Determinar si aplicar bono
+    let bonusApplied = false;
+    if (needsBonus && accept_bonus) {
+      bonusApplied = true;
     }
 
     // Create the quotation in a transaction
     const result = await this.prisma.$transaction(async (tx) => {
+      let bonusTransaction = null;
+      let newBalance = aliado_wallet.balance;
+
+      // Si se aplicó bono, crear registro de la transacción y descontar comisión
+      if (bonusApplied) {
+        // Calcular nuevo balance después de descontar la comisión
+        newBalance = aliado_wallet.balance - estimatedCommission;
+
+        // Crear transacción de bono (para registro histórico)
+        bonusTransaction = await tx.walletTransaction.create({
+          data: {
+            amount: -estimatedCommission,
+            type: 'adjustment',
+            description: `Comisión por cotización con bono aplicado - COP ${estimatedCommission.toLocaleString('es-CO')}`,
+            status: 'completed',
+            transaction_id: `BONUS_COMM_${Date.now()}_${intrabblerUserId}`,
+            wallet_id: aliado_wallet.id,
+          }
+        });
+
+        // Actualizar balance de la wallet (descontar la comisión)
+        await tx.wallet.update({
+          where: { id: aliado_wallet.id },
+          data: {
+            balance: newBalance
+          }
+        });
+      }
+
       // Create the estimated price first
       const estimatedPrice = await tx.estimatedPricesQuotations.create({
         data: {
@@ -136,7 +213,7 @@ export class QuotationsService {
         }
       });
 
-      return { quotation, estimatedPrice };
+      return { quotation, estimatedPrice, bonusTransaction, bonusApplied, newBalance };
     });
 
     // Prepare notification data
