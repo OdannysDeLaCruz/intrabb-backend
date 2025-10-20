@@ -63,8 +63,9 @@ enum CounterOfferStatus {
 
 // Status for service appointments.
 enum AppointmentStatus {
-  pending
-  confirmed
+  awaiting_acceptance  // Cotización creada, esperando que cliente acepte
+  pending              // Cliente aceptó, esperando que aliado confirme "En Camino"
+  confirmed            // Aliado confirmó que va en camino
   completed
   cancelled
   in_progress
@@ -687,13 +688,14 @@ model WalletTransaction {
   wallet_id           Int
   payment_method_id   Int? // NULL si es pago por comision, ya que el metodo de pago se registra en la comision
   related_service_appointment_id Int?
-  created_at          DateTime @default(now()) 
+  created_at          DateTime @default(now())
   updated_at          DateTime @updatedAt
 
   wallet              Wallet @relation(fields: [wallet_id], references: [id])
   payment_method      PaymentMethod? @relation(fields: [payment_method_id], references: [id], onDelete: Cascade)
   related_service_appointment ServiceAppointment? @relation(fields: [related_service_appointment_id], references: [id], onDelete: Cascade)
   commission_payment  CommissionPayment?
+  wompi_payment       WompiPayment?
 
   @@map("wallet_transactions")
 }
@@ -877,4 +879,61 @@ model FailedNotification {
   @@index([notification_type])
   @@index([priority])
   @@map("failed_notifications")
+}
+
+// -------------------------------------
+// Payment Gateway Models (Wompi)
+// -------------------------------------
+
+// Tabla para guardar información de pagos de Wompi
+model WompiPayment {
+  id                      Int       @id @default(autoincrement())
+  wallet_transaction_id   Int       @unique
+
+  // IDs de Wompi
+  wompi_transaction_id    String    @unique  // ID único de Wompi
+  wompi_reference         String    @unique  // Referencia del comercio (nuestro transaction_id)
+
+  // Detalles del pago
+  payment_method_type     String?   // CARD, NEQUI, PSE, BANCOLOMBIA_TRANSFER, etc.
+  async_payment_url       String?   // URL asíncrona para PSE y BANCOLOMBIA_TRANSFER
+
+  // Metadata
+  customer_email          String?
+  customer_phone          String?
+
+  // Fechas importantes
+  created_at_wompi        DateTime?
+  finalized_at_wompi      DateTime?
+
+  // Estado interno
+  raw_response            Json?     // Respuesta completa de Wompi
+  created_at              DateTime  @default(now())
+  updated_at              DateTime  @updatedAt
+
+  wallet_transaction      WalletTransaction @relation(fields: [wallet_transaction_id], references: [id])
+
+  @@index([wompi_transaction_id])
+  @@index([wompi_reference])
+  @@map("wompi_payments")
+}
+
+// Tabla para logs de webhooks
+model WompiWebhookLog {
+  id                      Int       @id @default(autoincrement())
+  event_type              String    // transaction.updated, payout.completed, etc.
+  wompi_event_id          String?   // ID del evento de Wompi (si existe)
+  signature               String
+  signature_valid         Boolean
+  payload                 Json
+  processed               Boolean   @default(false)
+  processed_at            DateTime?
+  error_message           String?
+  retry_count             Int       @default(0)
+  created_at              DateTime  @default(now())
+
+  @@index([event_type])
+  @@index([processed])
+  @@index([created_at])
+  @@map("wompi_webhook_logs")
 }
