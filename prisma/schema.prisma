@@ -66,10 +66,10 @@ enum AppointmentStatus {
   awaiting_acceptance  // Cotización creada, esperando que cliente acepte
   pending              // Cliente aceptó, esperando que aliado confirme "En Camino"
   confirmed            // Aliado confirmó que va en camino
-  completed
-  cancelled
-  in_progress
-  rescheduled
+  completed            // Aliado completó el servicio
+  cancelled            // Aliado / Cliente canceló el servicio
+  in_progress          // Aliado está trabajando
+  rescheduled          // Aliado reprogramó el servicio
 
   @@map("order_status")
 }
@@ -192,7 +192,8 @@ enum CommissionPaymentStatus {
   fully_paid
   overdue
   waived
-  
+  refunded  // ✅ NUEVO: Para cotizaciones no seleccionadas
+
   @@map("commission_payment_status")
 }
 
@@ -444,9 +445,9 @@ model ServiceRequest {
   counter_offers          CounterOffer[]
   accepted_counter_offer  CounterOffer? @relation("AcceptedCounterOffer", fields: [accepted_counter_offer_id], references: [id])
   initial_budget          InitialBudget? @relation(fields: [initial_budget_id], references: [id])
-  appointment             ServiceAppointment? // puede tener entre cero y uno
+  appointments            ServiceAppointment[] // ✅ Cambiado a 1:N (múltiples citas posibles)
   images                  ServiceRequestImage[] // imágenes opcionales (máx. 5)
-  
+
   // Nueva relación para fixed_price
   applications            Applications[]    // Solo para fixed_price
 
@@ -544,7 +545,7 @@ model Quotations {
   service_request_id Int
   intrabbler_id String @db.Uuid
   estimated_price_id Int @unique
-  created_at DateTime @default(now()) 
+  created_at DateTime @default(now())
   updated_at DateTime @updatedAt
 
   service_request ServiceRequest @relation(fields: [service_request_id], references: [id])
@@ -552,8 +553,37 @@ model Quotations {
   estimated_price EstimatedPricesQuotations @relation(fields: [estimated_price_id], references: [id])
   counter_offers CounterOffer[]
   service_appointment ServiceAppointment?
+  quotation_commission QuotationCommission?  // ✅ NUEVA relación
 
   @@map("quotations")
+}
+
+model QuotationCommission {
+  id Int @id @default(autoincrement())
+  quotation_id Int @unique
+
+  commission_percentage_due Float
+  commission_amount_due Float
+
+  commission_percentage_paid Float @default(0)
+  commission_amount_paid Float @default(0)
+
+  payment_status CommissionPaymentStatus @default(pending)  // pending, paid, waived, refunded
+  is_paid Boolean @default(false)
+
+  wallet_transaction_id Int? @unique
+
+  paid_at DateTime?
+  refunded_at DateTime?
+  notes String?
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  quotation Quotations @relation(fields: [quotation_id], references: [id], onDelete: Cascade)
+  wallet_transaction WalletTransaction? @relation(fields: [wallet_transaction_id], references: [id])
+
+  @@map("quotation_commissions")
 }
 
 model CounterOffer {
@@ -586,23 +616,24 @@ model ServiceAppointment {
   duration_minutes      Int @default(60)
   status                AppointmentStatus @default(pending)
   modality              Modality @default(in_person)
+  is_active             Boolean @default(true)           // ✅ NUEVO: Indica si la cita está activa
   cancelation_reason    String?
   cancelation_at        DateTime?
   client_id             String @db.Uuid
   intrabbler_id         String @db.Uuid
-  service_request_id    Int @unique
+  service_request_id    Int                              // ❌ Removido @unique (permite múltiples citas por solicitud)
   location_address_id   Int
-  
+
   // Campos opcionales dependiendo del tipo de servicio
-  quotation_id          Int? @unique      // FK a Quotations (para quotation_based) - unique for 1:1
-  application_id        Int? @unique      // FK a Applications (para fixed_price) - unique for 1:1
-  
-  created_at            DateTime @default(now()) 
+  quotation_id          Int @unique                      // ✅ Ahora obligatorio y @unique para quotation_based
+  application_id        Int? @unique                     // FK a Applications (para fixed_price) - unique for 1:1
+
+  created_at            DateTime @default(now())
   updated_at            DateTime @updatedAt
 
   client User @relation("ClientAppointments", fields: [client_id], references: [id])
   intrabbler User @relation("ProfessionalAppointments", fields: [intrabbler_id], references: [id])
-  quotation Quotations? @relation(fields: [quotation_id], references: [id])
+  quotation Quotations @relation(fields: [quotation_id], references: [id])  // ✅ Ahora obligatorio
   application Applications? @relation(fields: [application_id], references: [id])
   location_address UserAddress @relation("LocationAddress", fields: [location_address_id], references: [id])
   service_request ServiceRequest @relation(fields: [service_request_id], references: [id])
@@ -682,23 +713,25 @@ model PaymentMethod {
 }
 
 model WalletTransaction {
-  id                  Int @id @default(autoincrement())
-  amount              Float @default(0)
-  type                WalletTransactionType
-  description         String?
-  status              TransactionStatus @default(pending)
-  transaction_id      String @unique
-  wallet_id           Int
-  payment_method_id   Int? // NULL si es pago por comision, ya que el metodo de pago se registra en la comision
+  id                    Int @id @default(autoincrement())
+  amount                Float @default(0)
+  type                  WalletTransactionType
+  description           String?
+  status                TransactionStatus @default(pending)
+  transaction_id        String @unique
+  wallet_id             Int
+  payment_method_id     Int? // NULL si es pago por comision, ya que el metodo de pago se registra en la comision
+  wompi_payment_id      Int? @unique // FK a WompiPayment para relación bidireccional
   related_service_appointment_id Int?
-  created_at          DateTime @default(now())
-  updated_at          DateTime @updatedAt
+  created_at            DateTime @default(now())
+  updated_at            DateTime @updatedAt
 
-  wallet              Wallet @relation(fields: [wallet_id], references: [id])
-  payment_method      PaymentMethod? @relation(fields: [payment_method_id], references: [id], onDelete: Cascade)
+  wallet                Wallet @relation(fields: [wallet_id], references: [id])
+  payment_method        PaymentMethod? @relation(fields: [payment_method_id], references: [id], onDelete: Cascade)
+  wompi_payment         WompiPayment? @relation("WompiPaymentToWalletTransaction", fields: [wompi_payment_id], references: [id])
   related_service_appointment ServiceAppointment? @relation(fields: [related_service_appointment_id], references: [id], onDelete: Cascade)
-  commission_payment  CommissionPayment?
-  wompi_payment       WompiPayment?
+  commission_payment    CommissionPayment?
+  quotation_commission  QuotationCommission?  // ✅ NUEVA relación opuesta
 
   @@map("wallet_transactions")
 }
@@ -891,7 +924,6 @@ model FailedNotification {
 // Tabla para guardar información de pagos de Wompi
 model WompiPayment {
   id                      Int       @id @default(autoincrement())
-  wallet_transaction_id   Int       @unique
 
   // IDs de Wompi
   wompi_transaction_id    String    @unique  // ID único de Wompi
@@ -914,7 +946,7 @@ model WompiPayment {
   created_at              DateTime  @default(now())
   updated_at              DateTime  @updatedAt
 
-  wallet_transaction      WalletTransaction @relation(fields: [wallet_transaction_id], references: [id])
+  wallet_transaction      WalletTransaction? @relation("WompiPaymentToWalletTransaction")
 
   @@index([wompi_transaction_id])
   @@index([wompi_reference])
