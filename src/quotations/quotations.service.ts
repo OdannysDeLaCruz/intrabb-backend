@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException, ConflictException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AppGateway } from '../app/app.gateway';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -62,16 +62,16 @@ export class QuotationsService {
     }
 
     // Check if the intrabbler already has a quotation for this request
-    const existingQuotation = await this.prisma.quotations.findFirst({
-      where: {
-        service_request_id,
-        intrabbler_id: intrabblerUserId,
-      }
-    });
+    // const existingQuotation = await this.prisma.quotations.findFirst({
+    //   where: {
+    //     service_request_id,
+    //     intrabbler_id: intrabblerUserId,
+    //   }
+    // });
 
-    if (existingQuotation) {
-      throw new BadRequestException('Ya tienes una cotización para esta solicitud de servicio');
-    }
+    // if (existingQuotation) {
+    //   throw new BadRequestException('Ya tienes una cotización para esta solicitud de servicio');
+    // }
 
     // Verify that the user is an intrabbler and approved
     const intrabblerProfile = await this.prisma.intrabblerProfile.findUnique({
@@ -141,6 +141,7 @@ export class QuotationsService {
     console.log("needsBonus", needsBonus)
     console.log("accept_bonus", accept_bonus)
     console.log("needsBonus && !accept_bonus", needsBonus && !accept_bonus)
+    console.log("hasDebtButCanQuote", hasDebtButCanQuote)
     if (needsBonus && !accept_bonus) {
       // El aliado puede usar un cupo de cotizaciones adelantadas
       const message = aliado_wallet.balance === 0
@@ -162,12 +163,12 @@ export class QuotationsService {
     const usingBonus = needsBonus && accept_bonus;
 
     // Calcular duration_minutes para el appointment
-    let durationMinutes = 60; // default
-    if (estimated_price.pricing_type === 'per_hour') {
-      durationMinutes = estimated_price.estimated_unit_quantity * 60;
-    } else if (estimated_price.pricing_type === 'per_day') {
-      durationMinutes = estimated_price.estimated_unit_quantity * 24 * 60;
-    }
+    // let durationMinutes = 60; // default
+    // if (estimated_price.pricing_type === 'per_hour') {
+    //   durationMinutes = estimated_price.estimated_unit_quantity * 60;
+    // } else if (estimated_price.pricing_type === 'per_day') {
+    //   durationMinutes = estimated_price.estimated_unit_quantity * 24 * 60;
+    // }
 
     // Create the quotation in a transaction
     const result = await this.prisma.$transaction(async (tx) => {
@@ -203,40 +204,27 @@ export class QuotationsService {
         }
       });
 
-      // 3. Create ServiceAppointment temporal (awaiting_acceptance)
-      const appointment = await tx.serviceAppointment.create({
+      // 3. Create QuotationCommission (NO ServiceAppointment yet)
+      const quotationCommission = await tx.quotationCommission.create({
         data: {
-          appointment_date: serviceRequest.preferred_date || new Date(),
-          duration_minutes: durationMinutes,
-          status: 'awaiting_acceptance',
-          client_id: serviceRequest.client_id,
-          intrabbler_id: intrabblerUserId,
-          service_request_id: service_request_id,
           quotation_id: quotation.id,
-          location_address_id: serviceRequest.location_address_id,
-        }
-      });
-
-      // 4. Create CommissionRecord
-      const commissionRecord = await tx.commissionRecord.create({
-        data: {
-          service_appointment_id: appointment.id,
           commission_percentage_due: commissionPercentage,
           commission_amount_due: estimatedCommission,
           commission_percentage_paid: commissionPercentage,
           commission_amount_paid: estimatedCommission,
-          is_paid_full: true,
+          is_paid: true,
           payment_status: 'fully_paid',
-          first_payment_at: new Date(),
-          fully_paid_at: new Date(),
-          due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 días
+          paid_at: new Date(),
+          notes: hasEnoughBalance
+            ? 'Pago completo automático al crear cotización'
+            : 'Pago con cupo aplicado al crear cotización',
         }
       });
 
-      // 5. Create WalletTransaction for commission
+      // 4. Create WalletTransaction for commission
       const description = hasEnoughBalance
-        ? `Comisión completa por cotización - Cita #${appointment.id}`
-        : `Comisión por cotización con cupo aplicado - Cita #${appointment.id}`;
+        ? `Comisión por cotización #${quotation.id}`
+        : `Comisión por cotización con cupo aplicado - Cotización #${quotation.id}`;
 
       const walletTransaction = await tx.walletTransaction.create({
         data: {
@@ -246,27 +234,17 @@ export class QuotationsService {
           status: 'completed',
           transaction_id: `COMM_QUOT_${quotation.id}_${Date.now()}`,
           wallet_id: aliado_wallet.id,
-          related_service_appointment_id: appointment.id,
+          related_service_appointment_id: null, // No hay appointment aún
         }
       });
 
-      // 6. Create CommissionPayment
-      const commissionPayment = await tx.commissionPayment.create({
-        data: {
-          commission_record_id: commissionRecord.id,
-          amount_paid: estimatedCommission,
-          percentage_paid: commissionPercentage,
-          payment_method_id: 1, // wallet
-          wallet_transaction_id: walletTransaction.id,
-          processed_automatically: true,
-          processing_system: 'quotation_creation',
-          notes: hasEnoughBalance
-            ? 'Pago completo automático al crear cotización'
-            : 'Pago con cupo aplicado al crear cotización',
-        }
+      // 5. Vincular transacción con comisión
+      await tx.quotationCommission.update({
+        where: { id: quotationCommission.id },
+        data: { wallet_transaction_id: walletTransaction.id }
       });
 
-      // 7. Update Wallet balance
+      // 6. Update Wallet balance
       const newBalance = aliado_wallet.balance - estimatedCommission;
       await tx.wallet.update({
         where: { id: aliado_wallet.id },
@@ -276,9 +254,7 @@ export class QuotationsService {
       return {
         quotation,
         estimatedPrice,
-        appointment,
-        commissionRecord,
-        commissionPayment,
+        quotationCommission,
         walletTransaction,
         newBalance,
         usingBonus
@@ -332,7 +308,7 @@ export class QuotationsService {
         },
         {
           priority: 'high', // Importante para el cliente
-          websocketCallback: async (userId, event, data) => {
+          websocketCallback: async () => {
             // Mantener también la notificación a la sala para usuarios que estén viendo en tiempo real
             return await this.appGateway.notifyNewQuotation(service_request_id, notificationData);
           }
@@ -527,12 +503,7 @@ export class QuotationsService {
     }
 
     // Devolver comisión antes de eliminar
-    if (quotation.service_appointment) {
-      await this.refundQuotationCommission(
-        quotation.service_appointment.id,
-        'Cancelada por el aliado'
-      );
-    }
+    await this.refundQuotationCommission(quotation.id);
 
     await this.prisma.$transaction(async (tx) => {
       // Delete the quotation first
@@ -553,62 +524,48 @@ export class QuotationsService {
   }
 
   /**
-   * Devuelve la comisión cobrada cuando una cotización no es seleccionada o es cancelada
+   * Devuelve la comisión cobrada cuando una cotización no es seleccionada
    */
-  private async refundQuotationCommission(
-    appointmentId: number,
-    cancellationReason: string
-  ): Promise<void> {
+  private async refundQuotationCommission(quotation_id: number): Promise<void> {
     await this.prisma.$transaction(async (tx) => {
-      // 1. Buscar el appointment
-      const appointment = await tx.serviceAppointment.findUnique({
-        where: { id: appointmentId },
+      // 1. Buscar QuotationCommission
+      const quotationCommission = await tx.quotationCommission.findUnique({
+        where: { quotation_id },
         include: {
-          commission_record: {
+          quotation: {
             include: {
-              commission_payments: {
-                include: {
-                  wallet_transaction: true
-                }
+              intrabbler: {
+                include: { wallet: true }
               }
             }
           },
-          intrabbler: {
-            include: {
-              wallet: true
-            }
-          }
+          wallet_transaction: true
         }
       });
 
-      if (!appointment) {
-        throw new NotFoundException('Appointment not found');
+      if (!quotationCommission) {
+        return; // No hay comisión que devolver
       }
 
-      if (!appointment.commission_record) {
-        // No hay comisión que devolver
-        return;
-      }
-
-      const commissionRecord = appointment.commission_record;
-      const walletId = appointment.intrabbler.wallet.id;
-      const amountToRefund = commissionRecord.commission_amount_paid;
+      const amountToRefund = quotationCommission.commission_amount_paid;
 
       if (amountToRefund <= 0) {
         // No hay monto pagado que devolver
         return;
       }
 
+      const walletId = quotationCommission.quotation.intrabbler.wallet.id;
+
       // 2. Crear WalletTransaction de devolución
-      const refundTransaction = await tx.walletTransaction.create({
+      await tx.walletTransaction.create({
         data: {
           amount: amountToRefund, // POSITIVO
           type: 'refund',
-          description: `Devolución de comisión - ${cancellationReason}`,
+          description: `Devolución de comisión - Cotización no seleccionada`,
           status: 'completed',
-          transaction_id: `REFUND_${appointmentId}_${Date.now()}`,
+          transaction_id: `REFUND_QUOT_${quotation_id}_${Date.now()}`,
           wallet_id: walletId,
-          related_service_appointment_id: appointmentId,
+          related_service_appointment_id: null, // No hay appointment
         }
       });
 
@@ -622,24 +579,15 @@ export class QuotationsService {
         }
       });
 
-      // 4. Actualizar CommissionRecord
-      await tx.commissionRecord.update({
-        where: { id: commissionRecord.id },
+      // 4. Actualizar QuotationCommission
+      await tx.quotationCommission.update({
+        where: { id: quotationCommission.id },
         data: {
           commission_amount_paid: 0,
           commission_percentage_paid: 0,
-          is_paid_full: false,
-          payment_status: 'waived',
-        }
-      });
-
-      // 5. Actualizar ServiceAppointment
-      await tx.serviceAppointment.update({
-        where: { id: appointmentId },
-        data: {
-          status: 'cancelled',
-          cancelation_reason: cancellationReason,
-          cancelation_at: new Date(),
+          is_paid: false,
+          payment_status: 'refunded',
+          refunded_at: new Date()
         }
       });
     });
@@ -660,8 +608,7 @@ export class QuotationsService {
             email: true,
             is_active: true,
           }
-        },
-        appointment: true,
+        }
       }
     });
 
@@ -677,9 +624,9 @@ export class QuotationsService {
       throw new BadRequestException('Service request is not receiving offers');
     }
 
-    if (serviceRequest.appointment) {
-      throw new BadRequestException('Service request already has an appointment');
-    }
+    // if (serviceRequest.appointment) {
+    //   throw new BadRequestException('Service request already has an appointment');
+    // }
 
     if (serviceRequest.client_id !== client_id) {
       throw new ForbiddenException('You are not the owner of this service request');
@@ -741,6 +688,33 @@ export class QuotationsService {
       throw new BadRequestException('Intrabbler profile is not approved');
     }
 
+    // Validar que no existe cita activa para esta solicitud
+    const existingActiveAppointment = await this.prisma.serviceAppointment.findFirst({
+      where: {
+        service_request_id,
+        is_active: true
+      }
+    });
+
+    if (existingActiveAppointment) {
+      throw new ConflictException(
+        'Tienes una cita activa. Debes cancelarla antes de aceptar otra cotización.'
+      );
+    }
+
+    // Calcular duration_minutes para el appointment (copiado del método create)
+    let durationMinutes = 60; // default
+    if (quotation.estimated_price.pricing_type === 'per_hour') {
+      durationMinutes = quotation.estimated_price.estimated_unit_quantity * 60;
+    } else if (quotation.estimated_price.pricing_type === 'per_day') {
+      durationMinutes = quotation.estimated_price.estimated_unit_quantity * 24 * 60;
+    }
+
+    // Obtener QuotationCommission
+    const quotationCommission = await this.prisma.quotationCommission.findUnique({
+      where: { quotation_id }
+    });
+
     // Ejecutar todo en una transacción
     const result = await this.prisma.$transaction(async (tx) => {
       // 1. Actualizar la solicitud a offer_accepted
@@ -755,20 +729,38 @@ export class QuotationsService {
         data: { status: 'accepted' }
       });
 
-      // 3. Obtener appointment que ya existe (creado en create())
-      const appointment = await tx.serviceAppointment.findUnique({
-        where: { quotation_id: quotation_id }
+      // 3. Crear ServiceAppointment (NUEVO - antes no existía)
+      const appointment = await tx.serviceAppointment.create({
+        data: {
+          appointment_date: quotation.service_request.preferred_date || new Date(),
+          duration_minutes: durationMinutes,
+          status: 'pending',
+          is_active: true,
+          client_id: serviceRequest.client_id,
+          intrabbler_id: quotation.intrabbler.id,
+          service_request_id,
+          quotation_id,
+          location_address_id: quotation.service_request.location_address_id,
+        }
       });
 
-      if (!appointment) {
-        throw new NotFoundException('Appointment not found for this quotation');
+      // 4. Crear CommissionRecord (vinculado al nuevo appointment)
+      if (quotationCommission) {
+        await tx.commissionRecord.create({
+          data: {
+            service_appointment_id: appointment.id,
+            commission_percentage_due: quotationCommission.commission_percentage_due,
+            commission_amount_due: quotationCommission.commission_amount_due,
+            commission_percentage_paid: quotationCommission.commission_percentage_paid,
+            commission_amount_paid: quotationCommission.commission_amount_paid,
+            is_paid_full: true,
+            payment_status: 'fully_paid',
+            first_payment_at: quotationCommission.paid_at || new Date(),
+            fully_paid_at: quotationCommission.paid_at || new Date(),
+            due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 días
+          }
+        });
       }
-
-      // 4. Actualizar appointment de 'awaiting_acceptance' a 'pending'
-      await tx.serviceAppointment.update({
-        where: { id: appointment.id },
-        data: { status: 'pending' }
-      });
 
       // 5. Obtener todas las otras cotizaciones pendientes para marcarlas como no seleccionadas
       const otherQuotations = await tx.quotations.findMany({
@@ -784,8 +776,7 @@ export class QuotationsService {
               name: true,
               lastname: true
             }
-          },
-          service_appointment: true,
+          }
         }
       });
 
@@ -810,12 +801,8 @@ export class QuotationsService {
     // Devolver comisiones de cotizaciones no seleccionadas
     if (result.otherQuotations && result.otherQuotations.length > 0) {
       for (const rejectedQuotation of result.otherQuotations) {
-        if (rejectedQuotation.service_appointment) {
-          await this.refundQuotationCommission(
-            rejectedQuotation.service_appointment.id,
-            'No seleccionada por el cliente'
-          );
-        }
+        // Refundar comisión por ID de cotización (no por appointment)
+        await this.refundQuotationCommission(rejectedQuotation.id);
       }
     }
 
@@ -839,7 +826,7 @@ export class QuotationsService {
         },
         {
           priority: 'critical', // ¡Muy importante que se entere!
-          websocketCallback: async (userId, event, data) => {
+          websocketCallback: async (userId) => {
             return await this.appGateway.notifyQuotationAcceptedToIntrabbler(userId, {
               quotation_id,
               service_request_id,
@@ -880,7 +867,7 @@ export class QuotationsService {
             },
             {
               priority: 'normal',
-              websocketCallback: async (userId, event, data) => {
+              websocketCallback: async (userId) => {
                 return await this.appGateway.notifyQuotationNotSelectedToIntrabbler(userId, {
                   quotation_id: rejectedQuotation.id,
                   service_request_id,
@@ -907,6 +894,171 @@ export class QuotationsService {
         appointment: result.appointment,
       },
       message: 'Quotation accepted successfully'
+    };
+  }
+
+  /**
+   * Cancela una cita y reembolsa la comisión asociada
+   */
+  async cancelAppointment(appointmentId: number, userId: string, cancellationReason?: string) {
+    // 1. Buscar el appointment
+    const appointment = await this.prisma.serviceAppointment.findUnique({
+      where: { id: appointmentId },
+      include: {
+        client: { select: { id: true } },
+        intrabbler: { select: { id: true, name: true, lastname: true } },
+        quotation: { select: { id: true } },
+        commission_record: {
+          include: {
+            service_appointment: {
+              select: { quotation_id: true }
+            }
+          }
+        }
+      }
+    });
+
+    if (!appointment) {
+      throw new NotFoundException('Appointment not found');
+    }
+
+    // 2. Validar que el usuario que cancela es el cliente
+    if (appointment.client.id !== userId) {
+      throw new ForbiddenException('Only the client can cancel this appointment');
+    }
+
+    // 3. Validar que la cita está activa
+    if (!appointment.is_active) {
+      throw new BadRequestException('This appointment is not active');
+    }
+
+    // 4. Ejecutar en transacción
+    const result = await this.prisma.$transaction(async (tx) => {
+      // 4a. Actualizar appointment a cancelled
+      const cancelledAppointment = await tx.serviceAppointment.update({
+        where: { id: appointmentId },
+        data: {
+          is_active: false,
+          status: 'cancelled',
+          cancelation_reason: cancellationReason || 'Cancelled by client',
+          cancelation_at: new Date()
+        }
+      });
+
+      // 4b. Si existe CommissionRecord, reembolsar comisión
+      if (appointment.commission_record && appointment.quotation) {
+        const commissionRecord = appointment.commission_record;
+        const amountToRefund = commissionRecord.commission_amount_paid;
+
+        if (amountToRefund > 0) {
+          // Buscar QuotationCommission para actualizar
+          const quotationCommission = await tx.quotationCommission.findUnique({
+            where: { quotation_id: appointment.quotation.id },
+            include: {
+              quotation: {
+                include: {
+                  intrabbler: {
+                    include: { wallet: true }
+                  }
+                }
+              }
+            }
+          });
+
+          if (quotationCommission) {
+            const walletId = quotationCommission.quotation.intrabbler.wallet.id;
+
+            // Crear WalletTransaction de devolución
+            await tx.walletTransaction.create({
+              data: {
+                amount: amountToRefund, // POSITIVO
+                type: 'refund',
+                description: `Devolución de comisión - Cita cancelada por el cliente`,
+                status: 'completed',
+                transaction_id: `REFUND_APPT_${appointmentId}_${Date.now()}`,
+                wallet_id: walletId,
+                related_service_appointment_id: appointmentId,
+              }
+            });
+
+            // Actualizar Wallet balance
+            await tx.wallet.update({
+              where: { id: walletId },
+              data: {
+                balance: {
+                  increment: amountToRefund
+                }
+              }
+            });
+
+            // Actualizar QuotationCommission
+            await tx.quotationCommission.update({
+              where: { id: quotationCommission.id },
+              data: {
+                commission_amount_paid: 0,
+                commission_percentage_paid: 0,
+                is_paid: false,
+                payment_status: 'refunded',
+                refunded_at: new Date()
+              }
+            });
+
+            // Actualizar CommissionRecord
+            await tx.commissionRecord.update({
+              where: { id: commissionRecord.id },
+              data: {
+                commission_amount_paid: 0,
+                commission_percentage_paid: 0,
+                is_paid_full: false,
+                payment_status: 'waived'
+              }
+            });
+          }
+        }
+      }
+
+      return cancelledAppointment;
+    });
+
+    // 5. Enviar notificación al aliado
+    try {
+      await this.notificationsService.sendHybridNotification(
+        appointment.intrabbler.id,
+        'cita_cancelada',
+        {
+          title: '❌ Cita Cancelada',
+          body: `El cliente canceló la cita. Tu comisión ha sido reembolsada.`,
+          data: {
+            type: 'cita_cancelada',
+            appointment_id: appointmentId.toString(),
+            reason: cancellationReason || 'Cancelled by client',
+            timestamp: new Date().toISOString()
+          }
+        },
+        {
+          priority: 'high',
+          websocketCallback: async (userId) => {
+            return await this.appGateway.notifyAliado(userId, 'cita_cancelada', {
+              appointment_id: appointmentId,
+              message: 'Tu cita ha sido cancelada por el cliente',
+              reason: cancellationReason || 'Cancelled by client',
+              commission_refunded: true
+            });
+          }
+        }
+      );
+
+      console.log(`✅ Notificación de cita cancelada enviada a aliado: ${appointment.intrabbler.name} ${appointment.intrabbler.lastname}`);
+    } catch (error) {
+      console.error('Error sending appointment cancellation notification:', error);
+    }
+
+    return {
+      success: true,
+      data: {
+        appointment: result,
+      },
+      message: 'Appointment cancelled successfully and commission refunded'
     };
   }
 }
