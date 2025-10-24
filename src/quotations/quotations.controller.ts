@@ -200,4 +200,38 @@ export class QuotationsController {
       );
     }
   }
+
+  @Delete('appointments/:appointmentId/cancel')
+  async cancelAppointment(
+    @Param('appointmentId', ParseIntPipe) appointmentId: number,
+    @Body() body: { cancellation_reason?: string },
+    @Request() req
+  ) {
+    try {
+      // Verificar que el usuario sea cliente
+      const userRole = req.user.role?.name;
+      if (userRole !== 'client') {
+        throw new ForbiddenException('Solo clientes pueden cancelar citas');
+      }
+
+      return await this.quotationsService.cancelAppointment(
+        appointmentId,
+        req.user.user_id,
+        body.cancellation_reason
+      );
+    } catch (error) {
+      console.log(error);
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      throw new HttpException(
+        {
+          success: false,
+          message: 'Error cancelling appointment',
+          error: error.message
+        },
+        HttpStatus.INTERNAL_SERVER_ERROR
+      );
+    }
+  }
 }
