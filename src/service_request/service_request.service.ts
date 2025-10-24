@@ -440,7 +440,7 @@ export class ServiceRequestService {
             }
           }
         },
-        appointment: true,
+        appointments: true,
         initial_budget: true,
         images: {
           select: {
@@ -522,7 +522,7 @@ export class ServiceRequestService {
             estimated_price: true,
           }
         },
-        appointment: true,
+        appointments: true,
         initial_budget: true,
         images: {
           select: {
