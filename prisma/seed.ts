@@ -80,15 +80,45 @@ async function main() {
   //   ]
   // });
 
-  await prisma.paymentMethod.createMany({
-    data: [
-      {
-        name: 'wallet',
-        description: 'Wallet',
-        code: 'wallet'
-      }
-    ]
-  });
+  // Seed Payment Methods
+  // Verificar si ya existen métodos de pago
+  const existingMethods = await prisma.paymentMethod.count();
+
+  if (existingMethods === 0) {
+    await prisma.paymentMethod.createMany({
+      data: [
+        {
+          name: 'Wallet',
+          description: 'Saldo de la billetera virtual',
+          code: 'WALLET'
+        },
+        {
+          name: 'Tarjeta de Crédito/Débito',
+          description: 'Pago con tarjeta de crédito o débito (Visa, Mastercard, AmEx)',
+          code: 'CARD'
+        },
+        {
+          name: 'Nequi',
+          description: 'Pago a través de la app Nequi',
+          code: 'NEQUI'
+        },
+        {
+          name: 'PSE',
+          description: 'Pago con PSE - Débito desde cuenta bancaria',
+          code: 'PSE'
+        },
+        {
+          name: 'Bancolombia Transfer',
+          description: 'Pago con Botón Bancolombia',
+          code: 'BANCOLOMBIA_TRANSFER'
+        }
+      ]
+    });
+
+    console.log('✅ Payment methods seeded successfully');
+  } else {
+    console.log('⏭️  Payment methods already exist, skipping seed');
+  }
 }
 
 main()

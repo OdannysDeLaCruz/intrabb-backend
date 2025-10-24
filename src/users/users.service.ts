@@ -400,6 +400,33 @@ export class UsersService {
           orderBy: {
             created_at: 'desc'
           }
+        },
+        transactions: {
+          where: {
+            type: 'payment_received',
+          },
+          select: {
+            id: true,
+            transaction_id: true,
+            status: true,
+            type: true,
+            amount: true,
+            created_at: true,
+            wompi_payment: {
+              select: {
+                id: true,
+                wompi_transaction_id: true,
+                wompi_reference: true,
+                payment_method_type: true,
+                async_payment_url: true,
+                created_at: true,
+              }
+            }
+          },
+          orderBy: {
+            created_at: 'desc'
+          },
+          take: 1 // Solo el pago más reciente
         }
       }
     });
