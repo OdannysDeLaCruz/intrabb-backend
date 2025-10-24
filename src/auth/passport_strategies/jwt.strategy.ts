@@ -36,7 +36,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
         role: true,
       },
     });
-    console.log('user::', user);
+    // console.log('user::', user);
     if (!user) {
       throw new UnauthorizedException('Token inválido');
     }

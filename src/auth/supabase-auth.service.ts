@@ -29,11 +29,15 @@ export class SupabaseAuthService {
   async getUser(request: Request, response: Response) {
     // Primero intentar con Authorization header (Bearer token)
     const authHeader = request.headers.authorization;
+    // console.log('authHeader', authHeader);
     if (authHeader?.startsWith('Bearer ')) {
       const token = authHeader.substring(7);
+      console.log('token', token);
       const supabase = this.createClient(request, response);
+      // console.log('supabase', supabase);
       const { data: { user }, error } = await supabase.auth.getUser(token);
-      
+      // console.log('user', user);
+      // console.log('error', error);
       if (!error && user) {
         return user;
       }

@@ -137,7 +137,7 @@ export class AuthService {
       console.log('signUpOrSignIn', createUserDto, 'platform:', platform)
       // Verificar si existe el phone_number
       const { user } = await this.getUserByPhone(createUserDto.phone_number)
-      console.log('user::', user)
+      // console.log('user::', user)
       if (user) {
         // Usuario existe - verificar acceso por plataforma
         const isValidPlatform = this.validatePlatformAccess(user.role_id, platform)
