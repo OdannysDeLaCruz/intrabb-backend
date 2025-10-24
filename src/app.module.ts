@@ -23,6 +23,8 @@ import { CommissionSettingsModule } from './commission-settings/commission-setti
 import { QueueModule } from './queue/queue.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { DeviceTokensModule } from './device-tokens/device-tokens.module';
+import { PaymentGatewaysModule } from './payment-gateways/payment-gateways.module';
+import { PaymentsModule } from './payments/payments.module';
 
 @Module({
   imports: [
@@ -53,7 +55,9 @@ import { DeviceTokensModule } from './device-tokens/device-tokens.module';
     CommissionSettingsModule,
     QueueModule,
     NotificationsModule,
-    DeviceTokensModule
+    DeviceTokensModule,
+    PaymentGatewaysModule,
+    PaymentsModule
   ],
   controllers: [],
   providers: [
