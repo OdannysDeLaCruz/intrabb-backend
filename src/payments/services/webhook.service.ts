@@ -266,13 +266,15 @@ export class WebhookService {
         }
       }
 
-      // 6. Actualizar metadata de Wompi
-      await tx.wompiPayment.updateMany({
-        where: { wallet_transaction_id: walletTransaction.id },
-        data: {
-          finalized_at_wompi: new Date(),
-        },
-      });
+      // 6. Actualizar metadata de Wompi si existe
+      if (walletTransaction.wompi_payment_id) {
+        await tx.wompiPayment.update({
+          where: { id: walletTransaction.wompi_payment_id },
+          data: {
+            finalized_at_wompi: new Date(),
+          },
+        });
+      }
 
       this.logger.log(`Funds credited to wallet: ${walletTransaction.wallet_id}, amount: ${walletTransaction.amount}`);
     });

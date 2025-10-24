@@ -53,7 +53,8 @@ export class PaymentsService {
     }
 
     // Verificar que el usuario sea el cliente
-    console.log(appointment.client_id, userId);
+    console.log("appointment.client_id", appointment.client_id);
+    console.log("userId", userId);
     if (appointment.client_id !== userId) {
       throw new BadRequestException('You are not authorized to pay for this service');
     }
@@ -74,9 +75,9 @@ export class PaymentsService {
         },
       },
     });
-
+    console.log("existingTransaction", existingTransaction);
     if (existingTransaction) {
-      throw new BadRequestException('Payment already exists for this service');
+      throw new BadRequestException('Ya existe un pago pendiente o completado para este servicio');
     }
 
     // 3. Obtener el registro de comisión (snapshot creado cuando se creó la cita)
@@ -130,11 +131,10 @@ export class PaymentsService {
 
       const paymentResponse = await gateway.initiatePayment(paymentRequest);
 
-      // 6. Guardar referencia externa de Wompi
+      // 6. Guardar referencia externa de Wompi y vincular con WalletTransaction
       if (paymentResponse.success) {
-        await this.prisma.wompiPayment.create({
+        const wompiPayment = await this.prisma.wompiPayment.create({
           data: {
-            wallet_transaction_id: walletTransaction.id,
             wompi_transaction_id: paymentResponse.externalId,
             wompi_reference: transactionId,
             payment_method_type: paymentMethod,
@@ -143,6 +143,12 @@ export class PaymentsService {
             customer_phone: appointment.client.phone_number,
             raw_response: paymentResponse as any,
           },
+        });
+
+        // 7. Vincular bidireccional: actualizar WalletTransaction con wompi_payment_id
+        await this.prisma.walletTransaction.update({
+          where: { id: walletTransaction.id },
+          data: { wompi_payment_id: wompiPayment.id },
         });
       }
 
