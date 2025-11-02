@@ -3,13 +3,19 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { PLATFORM_CLIENT } from 'src/constants';
+import { v4 as uuidv4 } from 'uuid';
+import { SignUpFromWebsiteInterface } from './interfaces/signUpFromWebsite.interface';
+import { CloudinaryService } from 'src/common/services/cloudinary.service';
 
 @Injectable()
 export class AuthService {
   private readonly role_client_id = 2
   private readonly role_professional_id = 3
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly cloudinaryService: CloudinaryService
+  ) {}
   
   async getUserByPhone(phone: string) {
     const includeConfig = this.getIncludeConfig()
@@ -147,12 +153,6 @@ export class AuthService {
           const platformName = platform === PLATFORM_CLIENT ? 'Cliente' : 'Aliado Profesional';
           const userRoleName = user.role?.name == 'client' ? 'Cliente' : 'Aliado Profesional';
 
-          // return {
-          //   message: `Acceso denegado. Este usuario está registrado como ${userRoleName} y no puede acceder a la plataforma de ${platformName}.`,
-          //   success: false,
-          //   error: 'PLATFORM_ACCESS_DENIED'
-          // }
-
           throw new BadRequestException({
             success: false,
             message: `Actualmente estas registrado como ${userRoleName}, si quieres ser ${platformName} cambia a modo ${platformName} desde tu perfil de ${userRoleName}.`,
@@ -236,6 +236,171 @@ export class AuthService {
         success: false,
         error,
       }
+    }
+  }
+
+  async CreateIntrabblerFromWebsite(data: SignUpFromWebsiteInterface) {
+    try {
+      console.log('signUpFromWebsite received:', {
+        tipoRegistro: data.tipoRegistro,
+        telefono: data.telefono,
+        nombre: data.nombre,
+        apellido: data.apellido,
+        profesion: data.profesion,
+        cedula: data.cedula,
+        nit: data.nit,
+        biografia: data.biografia,
+        servicios: data.servicios,
+        files: data.files
+      });
+
+      // Parse servicios if it's a string (JSON)
+      let serviciosArray = data.servicios;
+      if (typeof data.servicios === 'string') {
+        serviciosArray = JSON.parse(data.servicios);
+      }
+
+      console.log('Parsed servicios:', serviciosArray);
+
+      // Validación de datos
+      if (!data.tipoRegistro) {
+        throw new BadRequestException('Tipo de registro es obligatorio');
+      }
+
+      if (!data.telefono) {
+        throw new BadRequestException('El telefono es obligatorio');
+      }
+
+      if (!data.nombre) {
+        throw new BadRequestException('El nombre es obligatorio');
+      }
+
+      if (!data.apellido) {
+        throw new BadRequestException('El apellido es obligatorio');
+      }
+
+      if (!data.profesion) {
+        throw new BadRequestException('La profesión es obligatoria');
+      }
+      
+      if (data.tipoRegistro === 'independiente') {
+        if (!data.cedula) {
+          throw new BadRequestException('La cédula es obligatoria');
+        }
+      }
+
+      if (data.tipoRegistro === 'empresa') {
+        if (!data.nit) {
+          throw new BadRequestException('El NIT es obligatorio');
+        }
+      }
+
+      if (!data.biografia) {
+        throw new BadRequestException('La biografía es obligatoria');
+      }
+
+      if (!data.servicios || data.servicios.length === 0) {
+        throw new BadRequestException('Los servicios a ofrecer son obligatorios');
+      }
+
+      // Obtener archivos
+      const fotoPerfil = data.files?.fotoPerfil?.[0];
+      const fotoCedula = data.files?.fotoCedula?.[0];
+      const camaraComercio = data.files?.camaraComercio?.[0];
+
+      console.log('Archivos:', { fotoPerfil, fotoCedula, camaraComercio });
+
+      // PASO 1: Crear usuario
+      const userId = uuidv4();
+      const newUser = await this.prisma.user.create({
+        data: {
+          id: userId,
+          phone_number: data.telefono,
+          role_id: this.role_professional_id,
+          name: data.nombre,
+          lastname: data.apellido,
+          wallet: {
+            create: {}
+          },
+          intrabbler_profile: {
+            create: {
+              profession: data.profesion,
+              bio: data.biografia,
+              is_approved: false
+            }
+          }
+        },
+        // include: this.getIncludeConfig("aliados")
+        include: {
+          intrabbler_profile: true
+        }
+      });
+
+      console.log('Usuario creado:', newUser.id);
+
+      // PASO 2: Subir foto de perfil y actualizar usuario
+      if (fotoPerfil) {
+        try {
+          const fotoPerfilUrl = await this.cloudinaryService.uploadFile(fotoPerfil, 'intrabb/profiles');
+          await this.prisma.user.update({
+            where: { id: userId },
+            data: { photo_url: fotoPerfilUrl }
+          });
+          console.log('Foto de perfil guardada:', fotoPerfilUrl);
+        } catch (error) {
+          console.error('Error subiendo foto de perfil:', error);
+        }
+      }
+
+      // PASO 3: Guardar documento verificable (cédula o cámara de comercio)
+      try {
+        let documentType: any;
+        let documentFile: Express.Multer.File;
+
+        if (data.tipoRegistro === 'independiente' && fotoCedula) {
+          // Buscar document type para cédula
+          documentType = await this.prisma.documentType.findUnique({
+            where: { name: 'identify_card_full' }
+          });
+          documentFile = fotoCedula;
+        } else if (data.tipoRegistro === 'empresa' && camaraComercio) {
+          // Buscar document type para cámara de comercio
+          documentType = await this.prisma.documentType.findUnique({
+            where: { name: 'camara_comercio' }
+          });
+          documentFile = camaraComercio;
+        }
+
+        if (documentType && documentFile && newUser.intrabbler_profile) {
+          // Subir documento a Cloudinary
+          const documentUrl = await this.cloudinaryService.uploadFile(documentFile, 'intrabb/documents');
+
+          // Crear registro en verifiable_documents
+          // Nota: reviewed_by_id es requerido, usamos el usuario creado
+          await this.prisma.verifiableDocument.create({
+            data: {
+              intrabbler_profile_id: newUser.intrabbler_profile.id,
+              document_type_id: documentType.id,
+              document_url: documentUrl,
+              reviewed_by_id: userId, // Temporalmente el mismo usuario, se revisará después
+              status: 'Pending'
+            }
+          });
+
+          console.log('Documento verificable guardado para:', documentType.name);
+        }
+      } catch (error) {
+        console.error('Error guardando documento verificable:', error);
+      }
+
+      return {
+        success: true,
+        message: 'Usuario registrado correctamente',
+        user: newUser
+      };
+    } catch (error) {
+      console.error('Error in signUpFromWebsite:', error);
+      throw error;
     }
   }
 }

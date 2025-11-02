@@ -1,8 +1,11 @@
-import { Controller, Post, HttpCode, HttpStatus, Get, Req } from '@nestjs/common';
+import { Controller, Post, HttpCode, HttpStatus, Get, Req, UseInterceptors, UploadedFiles } from '@nestjs/common';
 import { Body } from '@nestjs/common';
+import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { AuthService } from './auth.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { RequestWithPlatform } from '../common/middleware/platform.middleware';
+import { Public } from '../common/decorators/public.decorator';
+import { SkipPlatform } from '../common/decorators/skip-platform.decorator';
 
 @Controller('auth')
 export class AuthController {
@@ -10,8 +13,12 @@ export class AuthController {
   
   @Post('phone-exists')
   @HttpCode(HttpStatus.OK)
+  @Public()
+  @SkipPlatform()
   async phoneExists(@Body() body: { phone: string }) {
-    return await this.authService.getUserByPhone(body.phone)
+    const { user } = await this.authService.getUserByPhone(body.phone)
+    console.log('exist user', user)
+    return { exists: user ? true : false }
   }
 
   @Post('sign-up')
@@ -35,5 +42,33 @@ export class AuthController {
   async completeProfile(@Req() req: any, @Body() body: any) {
     const userId = req.user?.id || req.user?.user_id
     return await this.authService.updateUserProfile(userId, body)
+  }
+
+  @Post('create-intrabbler-from-website')
+  @Public()
+  @SkipPlatform()
+  @UseInterceptors(
+    FileFieldsInterceptor([
+      { name: 'fotoPerfil', maxCount: 1 },
+      { name: 'fotoCedula', maxCount: 1 },
+      { name: 'camaraComercio', maxCount: 1 }
+    ])
+  )
+  async createIntrabblerFromWebsite(
+    @Body() body: any,
+    @UploadedFiles() files: {
+      fotoPerfil?: Express.Multer.File[];
+      fotoCedula?: Express.Multer.File[];
+      camaraComercio?: Express.Multer.File[];
+    }
+  ) {
+    console.log('SIGN UP FROM WEBSITE', body)
+    // Combine body and files into a single object
+    const registrationData = {
+      ...body,
+      files
+    };
+
+    return await this.authService.CreateIntrabblerFromWebsite(registrationData)
   }
 }
