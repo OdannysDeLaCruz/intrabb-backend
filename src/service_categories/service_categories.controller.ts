@@ -3,7 +3,7 @@ import { ServiceCategoriesService } from './service_categories.service';
 import { CreateServiceCategoryDto } from './dto/create-service_category.dto';
 import { UpdateServiceCategoryDto } from './dto/update-service_category.dto';
 import { SearchServiceCategoryDto } from './dto/search-service-category.dto';
-import { Public } from 'src/common/decorators';
+import { Public, SkipPlatform } from 'src/common/decorators';
 
 @Controller('service-categories')
 export class ServiceCategoriesController {
@@ -11,6 +11,7 @@ export class ServiceCategoriesController {
 
   @Post()
   create(@Body() createServiceCategoryDto: CreateServiceCategoryDto) {
+    return createServiceCategoryDto;
     // return this.serviceCategoriesService.create(createServiceCategoryDto);
   }
 
@@ -36,6 +37,7 @@ export class ServiceCategoriesController {
 
   @Get('parents')
   @Public()
+  @SkipPlatform()
   getParentCategories() {
     console.log('🔥 [DEBUG] getParentCategories endpoint hit - should be public');
     return this.serviceCategoriesService.findParentCategories();
