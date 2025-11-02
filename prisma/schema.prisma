@@ -345,6 +345,8 @@ model IntrabblerProfile {
   user_id       String @db.Uuid @unique
   profession    String
   bio           String?
+  is_company    Boolean @default(false)
+  nit           String? @unique
   rating_avg    Float @default(0)
   total_reviews Int @default(0)
   is_approved   Boolean @default(false)

@@ -4,35 +4,35 @@ import { v4 as uuidv4 } from 'uuid';
 const prisma = new PrismaClient();
 
 async function main() {
-//   const role = await prisma.role.createMany({
-//     data: [
-//       {
-//         name: 'admin'
-//       },
-//       {
-//         name: 'client'
-//       },
-//       {
-//         name: 'intrabbler'
-//       }
-//     ]
-//   });
-// console.log(uuidv4())
-//   await prisma.user.create({
-//     data: {
-//       id: uuidv4(),
-//       role_id: 1,
-//       name: 'admin',
-//       lastname: 'admin',
-//       phone_number: '3017953727',
-//       email: 'admin@admin.com',
-//       password_hash: 'admin',
-//       username: 'admin',
-//       is_active: true,
-//       is_online: true,
-//       last_login: new Date()
-//     }
-//   });
+  //   const role = await prisma.role.createMany({
+  //     data: [
+  //       {
+  //         name: 'admin'
+  //       },
+  //       {
+  //         name: 'client'
+  //       },
+  //       {
+  //         name: 'intrabbler'
+  //       }
+  //     ]
+  //   });
+  // console.log(uuidv4())
+  //   await prisma.user.create({
+  //     data: {
+  //       id: uuidv4(),
+  //       role_id: 1,
+  //       name: 'admin',
+  //       lastname: 'admin',
+  //       phone_number: '3017953727',
+  //       email: 'admin@admin.com',
+  //       password_hash: 'admin',
+  //       username: 'admin',
+  //       is_active: true,
+  //       is_online: true,
+  //       last_login: new Date()
+  //     }
+  //   });
 
   // await prisma.documentType.createMany({
   //   data: [
@@ -47,7 +47,15 @@ async function main() {
   //     {
   //       name: 'selfie',
   //       description: 'Fotografía selfie del usuario'
-  //     }
+  //     },
+  //     {
+  //       name: 'identity_card_full',
+  //       description: 'Cédula de identidad completa'
+  //     },
+  //     {
+  //       name: 'camara_comercio',
+  //       description: 'Cámara de comercio'
+  //     },
   //   ]
   // });
 
@@ -94,7 +102,8 @@ async function main() {
         },
         {
           name: 'Tarjeta de Crédito/Débito',
-          description: 'Pago con tarjeta de crédito o débito (Visa, Mastercard, AmEx)',
+          description:
+            'Pago con tarjeta de crédito o débito (Visa, Mastercard, AmEx)',
           code: 'CARD'
         },
         {
