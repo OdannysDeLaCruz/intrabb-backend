@@ -120,7 +120,7 @@ export class CloudinaryService {
    */
   async deleteMultipleImages(urls: string[]): Promise<boolean[]> {
     const results: boolean[] = [];
-    
+
     for (const url of urls) {
       const publicId = this.extractPublicIdFromUrl(url);
       if (publicId) {
@@ -130,7 +130,31 @@ export class CloudinaryService {
         results.push(false);
       }
     }
-    
+
     return results;
+  }
+
+  /**
+   * Sube un archivo a Cloudinary desde un archivo Multer
+   */
+  async uploadFile(file: Express.Multer.File, folder: string = 'uploads'): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const uploadStream = cloudinary.uploader.upload_stream(
+        {
+          folder: folder,
+          resource_type: 'auto',
+        },
+        (error, result) => {
+          if (error) {
+            console.error('Error uploading file to Cloudinary:', error);
+            reject(error);
+          } else {
+            resolve(result.secure_url);
+          }
+        }
+      );
+
+      uploadStream.end(file.buffer);
+    });
   }
 }

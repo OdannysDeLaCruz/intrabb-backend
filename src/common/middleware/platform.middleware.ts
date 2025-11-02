@@ -15,12 +15,22 @@ export class PlatformMiddleware implements NestMiddleware {
 
   use(req: RequestWithPlatform, res: Response, next: NextFunction) {
     // Check if the route has @SkipPlatform() decorator
-    // Note: We need to get the handler from the request context
-    // For now, we'll implement a simpler check based on the URL path
-    const shouldSkipPlatform = req.baseUrl.includes('/webhooks/');
+    if (req.route && req.route.handler) {
+      const skipPlatform = this.reflector.get<boolean>('skipPlatform', req.route.handler);
+      if (skipPlatform) {
+        return next();
+      }
+    }
+
+    // Skip platform validation for public routes
+    const shouldSkipPlatform =
+      req.baseUrl.includes('/webhooks/') ||
+      req.baseUrl.includes('/service-categories/parents');
+
     if (shouldSkipPlatform) {
       return next();
     }
+
     const platform = req.query.platform as string;
     if (!platform) {
       throw new BadRequestException({
