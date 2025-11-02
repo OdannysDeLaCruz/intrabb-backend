@@ -89,7 +89,7 @@ async function bootstrap() {
   });
 
   // const configService = app.get(ConfigService);
-  const port = 3002;
+  const port = process.env.PORT || 3000;
 
   // console.log('✅ NODE_ENV:', configService.get('NODE_ENV'));
   // console.log('✅ JWT_SECRET:', configService.get('JWT_SECRET'));
