@@ -1,4 +1,5 @@
-import { Module, MiddlewareConsumer } from '@nestjs/common';
+import { Module } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
 import { UsersModule } from './users/users.module';
 import { ServiceCategoriesModule } from './service_categories/service_categories.module';
 import { PrismaService } from './prisma/prisma.service';
@@ -13,7 +14,7 @@ import { CacheModule } from './cache/cache.module';
 import { ServiceRequestModule } from './service_request/service_request.module';
 import { VerifiableDocumentsModule } from './verifiable_documents/verifiable_documents.module';
 import { IntrabblersModule } from './intrabblers/intrabblers.module';
-import { PlatformMiddleware } from './common/middleware/platform.middleware';
+import { PlatformGuard } from './common/guards/platform.guard';
 import { AppGateway } from './app/app.gateway';
 import { QuotationsModule } from './quotations/quotations.module';
 import { CommonModule } from './common/common.module';
@@ -63,18 +64,11 @@ import { PaymentsModule } from './payments/payments.module';
   providers: [
     PrismaService,
     JwtStrategy,
-    AppGateway
+    AppGateway,
+    {
+      provide: APP_GUARD,
+      useClass: PlatformGuard,
+    }
   ],
 })
-export class AppModule {
-  configure(consumer: MiddlewareConsumer) {
-    // Apply webhook middleware FIRST (before body parsing)
-    // consumer
-    //   .apply(WebhookRawBodyMiddleware)
-    //   .forRoutes('*');
-    
-    consumer
-      .apply(PlatformMiddleware)
-      .forRoutes('*'); // Aplicar a todas las rutas
-  }
-}
+export class AppModule {}
