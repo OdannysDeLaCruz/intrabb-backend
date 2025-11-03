@@ -63,3 +63,7 @@ notas.txt
 
 # Firebase
 intrabb-platform-firebase-adminsdk-fbsvc-9561f71bb7.json
+
+# Temp files
+src/temp-clear-db.js
+src/temp-clear-queue.js

@@ -11,7 +11,7 @@ CREATE TYPE "quotation_status" AS ENUM ('pending', 'accepted', 'rejected', 'canc
 CREATE TYPE "counter_offer_status" AS ENUM ('pending', 'accepted', 'rejected', 'cancelled');
 
 -- CreateEnum
-CREATE TYPE "order_status" AS ENUM ('pending', 'confirmed', 'completed', 'cancelled', 'in_progress', 'rescheduled');
+CREATE TYPE "order_status" AS ENUM ('awaiting_acceptance', 'pending', 'confirmed', 'completed', 'cancelled', 'in_progress', 'rescheduled');
 
 -- CreateEnum
 CREATE TYPE "service_request_status" AS ENUM ('receiving_offers', 'receiving_applications', 'offer_accepted', 'cancelled', 'completed');
@@ -50,7 +50,7 @@ CREATE TYPE "gender" AS ENUM ('male', 'female', 'other', 'prefer_not_to_say');
 CREATE TYPE "verification_channel" AS ENUM ('didit', 'manual');
 
 -- CreateEnum
-CREATE TYPE "commission_payment_status" AS ENUM ('pending', 'partial_paid', 'fully_paid', 'overdue', 'waived');
+CREATE TYPE "commission_payment_status" AS ENUM ('pending', 'partial_paid', 'fully_paid', 'overdue', 'waived', 'refunded');
 
 -- CreateEnum
 CREATE TYPE "incident_type" AS ENUM ('accident', 'emergency', 'delay', 'inconsistency', 'other');
@@ -155,6 +155,8 @@ CREATE TABLE "intrabbler_profiles" (
     "user_id" UUID NOT NULL,
     "profession" TEXT NOT NULL,
     "bio" TEXT,
+    "is_company" BOOLEAN NOT NULL DEFAULT false,
+    "nit" TEXT,
     "rating_avg" DOUBLE PRECISION NOT NULL DEFAULT 0,
     "total_reviews" INTEGER NOT NULL DEFAULT 0,
     "is_approved" BOOLEAN NOT NULL DEFAULT false,
@@ -319,6 +321,26 @@ CREATE TABLE "quotations" (
 );
 
 -- CreateTable
+CREATE TABLE "quotation_commissions" (
+    "id" SERIAL NOT NULL,
+    "quotation_id" INTEGER NOT NULL,
+    "commission_percentage_due" DOUBLE PRECISION NOT NULL,
+    "commission_amount_due" DOUBLE PRECISION NOT NULL,
+    "commission_percentage_paid" DOUBLE PRECISION NOT NULL DEFAULT 0,
+    "commission_amount_paid" DOUBLE PRECISION NOT NULL DEFAULT 0,
+    "payment_status" "commission_payment_status" NOT NULL DEFAULT 'pending',
+    "is_paid" BOOLEAN NOT NULL DEFAULT false,
+    "wallet_transaction_id" INTEGER,
+    "paid_at" TIMESTAMP(3),
+    "refunded_at" TIMESTAMP(3),
+    "notes" TEXT,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "quotation_commissions_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
 CREATE TABLE "counter_offers" (
     "id" SERIAL NOT NULL,
     "service_request_id" INTEGER NOT NULL,
@@ -343,13 +365,14 @@ CREATE TABLE "service_appointments" (
     "duration_minutes" INTEGER NOT NULL DEFAULT 60,
     "status" "order_status" NOT NULL DEFAULT 'pending',
     "modality" "modality_type" NOT NULL DEFAULT 'in_person',
+    "is_active" BOOLEAN NOT NULL DEFAULT true,
     "cancelation_reason" TEXT,
     "cancelation_at" TIMESTAMP(3),
     "client_id" UUID NOT NULL,
     "intrabbler_id" UUID NOT NULL,
     "service_request_id" INTEGER NOT NULL,
     "location_address_id" INTEGER NOT NULL,
-    "quotation_id" INTEGER,
+    "quotation_id" INTEGER NOT NULL,
     "application_id" INTEGER,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMP(3) NOT NULL,
@@ -406,6 +429,9 @@ CREATE TABLE "payment_methods" (
     "name" TEXT NOT NULL,
     "code" TEXT NOT NULL,
     "description" TEXT,
+    "is_active" BOOLEAN NOT NULL DEFAULT true,
+    "url_icon" TEXT,
+    "is_visible_in_app" BOOLEAN NOT NULL DEFAULT true,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMP(3) NOT NULL,
 
@@ -422,6 +448,7 @@ CREATE TABLE "wallet_transactions" (
     "transaction_id" TEXT NOT NULL,
     "wallet_id" INTEGER NOT NULL,
     "payment_method_id" INTEGER,
+    "wompi_payment_id" INTEGER,
     "related_service_appointment_id" INTEGER,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMP(3) NOT NULL,
@@ -559,6 +586,41 @@ CREATE TABLE "failed_notifications" (
     CONSTRAINT "failed_notifications_pkey" PRIMARY KEY ("id")
 );
 
+-- CreateTable
+CREATE TABLE "wompi_payments" (
+    "id" SERIAL NOT NULL,
+    "wompi_transaction_id" TEXT NOT NULL,
+    "wompi_reference" TEXT NOT NULL,
+    "payment_method_type" TEXT,
+    "async_payment_url" TEXT,
+    "customer_email" TEXT,
+    "customer_phone" TEXT,
+    "created_at_wompi" TIMESTAMP(3),
+    "finalized_at_wompi" TIMESTAMP(3),
+    "raw_response" JSONB,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "wompi_payments_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "wompi_webhook_logs" (
+    "id" SERIAL NOT NULL,
+    "event_type" TEXT NOT NULL,
+    "wompi_event_id" TEXT,
+    "signature" TEXT NOT NULL,
+    "signature_valid" BOOLEAN NOT NULL,
+    "payload" JSONB NOT NULL,
+    "processed" BOOLEAN NOT NULL DEFAULT false,
+    "processed_at" TIMESTAMP(3),
+    "error_message" TEXT,
+    "retry_count" INTEGER NOT NULL DEFAULT 0,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "wompi_webhook_logs_pkey" PRIMARY KEY ("id")
+);
+
 -- CreateIndex
 CREATE UNIQUE INDEX "roles_name_key" ON "roles"("name");
 
@@ -579,6 +641,9 @@ CREATE UNIQUE INDEX "user_verifications_user_id_key" ON "user_verifications"("us
 
 -- CreateIndex
 CREATE UNIQUE INDEX "intrabbler_profiles_user_id_key" ON "intrabbler_profiles"("user_id");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "intrabbler_profiles_nit_key" ON "intrabbler_profiles"("nit");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "verifiable_documents_document_type_id_key" ON "verifiable_documents"("document_type_id");
@@ -617,7 +682,10 @@ CREATE UNIQUE INDEX "category_parameters_code_key" ON "category_parameters"("cod
 CREATE UNIQUE INDEX "quotations_estimated_price_id_key" ON "quotations"("estimated_price_id");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "service_appointments_service_request_id_key" ON "service_appointments"("service_request_id");
+CREATE UNIQUE INDEX "quotation_commissions_quotation_id_key" ON "quotation_commissions"("quotation_id");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "quotation_commissions_wallet_transaction_id_key" ON "quotation_commissions"("wallet_transaction_id");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "service_appointments_quotation_id_key" ON "service_appointments"("quotation_id");
@@ -633,6 +701,9 @@ CREATE UNIQUE INDEX "payment_methods_code_key" ON "payment_methods"("code");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "wallet_transactions_transaction_id_key" ON "wallet_transactions"("transaction_id");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "wallet_transactions_wompi_payment_id_key" ON "wallet_transactions"("wompi_payment_id");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "commission_records_service_appointment_id_key" ON "commission_records"("service_appointment_id");
@@ -669,6 +740,27 @@ CREATE INDEX "failed_notifications_notification_type_idx" ON "failed_notificatio
 
 -- CreateIndex
 CREATE INDEX "failed_notifications_priority_idx" ON "failed_notifications"("priority");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "wompi_payments_wompi_transaction_id_key" ON "wompi_payments"("wompi_transaction_id");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "wompi_payments_wompi_reference_key" ON "wompi_payments"("wompi_reference");
+
+-- CreateIndex
+CREATE INDEX "wompi_payments_wompi_transaction_id_idx" ON "wompi_payments"("wompi_transaction_id");
+
+-- CreateIndex
+CREATE INDEX "wompi_payments_wompi_reference_idx" ON "wompi_payments"("wompi_reference");
+
+-- CreateIndex
+CREATE INDEX "wompi_webhook_logs_event_type_idx" ON "wompi_webhook_logs"("event_type");
+
+-- CreateIndex
+CREATE INDEX "wompi_webhook_logs_processed_idx" ON "wompi_webhook_logs"("processed");
+
+-- CreateIndex
+CREATE INDEX "wompi_webhook_logs_created_at_idx" ON "wompi_webhook_logs"("created_at");
 
 -- AddForeignKey
 ALTER TABLE "users" ADD CONSTRAINT "users_role_id_fkey" FOREIGN KEY ("role_id") REFERENCES "roles"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -734,6 +826,12 @@ ALTER TABLE "quotations" ADD CONSTRAINT "quotations_intrabbler_id_fkey" FOREIGN 
 ALTER TABLE "quotations" ADD CONSTRAINT "quotations_estimated_price_id_fkey" FOREIGN KEY ("estimated_price_id") REFERENCES "estimated_prices_quotations"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE "quotation_commissions" ADD CONSTRAINT "quotation_commissions_quotation_id_fkey" FOREIGN KEY ("quotation_id") REFERENCES "quotations"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "quotation_commissions" ADD CONSTRAINT "quotation_commissions_wallet_transaction_id_fkey" FOREIGN KEY ("wallet_transaction_id") REFERENCES "wallet_transactions"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE "counter_offers" ADD CONSTRAINT "counter_offers_service_request_id_fkey" FOREIGN KEY ("service_request_id") REFERENCES "service_requests"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
@@ -752,7 +850,7 @@ ALTER TABLE "service_appointments" ADD CONSTRAINT "service_appointments_client_i
 ALTER TABLE "service_appointments" ADD CONSTRAINT "service_appointments_intrabbler_id_fkey" FOREIGN KEY ("intrabbler_id") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "service_appointments" ADD CONSTRAINT "service_appointments_quotation_id_fkey" FOREIGN KEY ("quotation_id") REFERENCES "quotations"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "service_appointments" ADD CONSTRAINT "service_appointments_quotation_id_fkey" FOREIGN KEY ("quotation_id") REFERENCES "quotations"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "service_appointments" ADD CONSTRAINT "service_appointments_application_id_fkey" FOREIGN KEY ("application_id") REFERENCES "applications"("id") ON DELETE SET NULL ON UPDATE CASCADE;
@@ -786,6 +884,9 @@ ALTER TABLE "wallet_transactions" ADD CONSTRAINT "wallet_transactions_wallet_id_
 
 -- AddForeignKey
 ALTER TABLE "wallet_transactions" ADD CONSTRAINT "wallet_transactions_payment_method_id_fkey" FOREIGN KEY ("payment_method_id") REFERENCES "payment_methods"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "wallet_transactions" ADD CONSTRAINT "wallet_transactions_wompi_payment_id_fkey" FOREIGN KEY ("wompi_payment_id") REFERENCES "wompi_payments"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "wallet_transactions" ADD CONSTRAINT "wallet_transactions_related_service_appointment_id_fkey" FOREIGN KEY ("related_service_appointment_id") REFERENCES "service_appointments"("id") ON DELETE CASCADE ON UPDATE CASCADE;

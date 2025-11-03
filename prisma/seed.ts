@@ -4,89 +4,89 @@ import { v4 as uuidv4 } from 'uuid';
 const prisma = new PrismaClient();
 
 async function main() {
-  //   const role = await prisma.role.createMany({
-  //     data: [
-  //       {
-  //         name: 'admin'
-  //       },
-  //       {
-  //         name: 'client'
-  //       },
-  //       {
-  //         name: 'intrabbler'
-  //       }
-  //     ]
-  //   });
-  // console.log(uuidv4())
-  //   await prisma.user.create({
-  //     data: {
-  //       id: uuidv4(),
-  //       role_id: 1,
-  //       name: 'admin',
-  //       lastname: 'admin',
-  //       phone_number: '3017953727',
-  //       email: 'admin@admin.com',
-  //       password_hash: 'admin',
-  //       username: 'admin',
-  //       is_active: true,
-  //       is_online: true,
-  //       last_login: new Date()
-  //     }
-  //   });
+    await prisma.role.createMany({
+      data: [
+        {
+          name: 'admin'
+        },
+        {
+          name: 'client'
+        },
+        {
+          name: 'intrabbler'
+        }
+      ]
+    });
+    
+    await prisma.user.create({
+      data: {
+        id: uuidv4(),
+        role_id: 1,
+        name: 'admin',
+        lastname: 'admin',
+        phone_number: '+573000000000',
+        email: 'admin@intrabb.com',
+        password_hash: 'admin',
+        username: 'admin',
+        is_active: true,
+        is_online: false,
+        last_login: new Date()
+      }
+    });
 
-  // await prisma.documentType.createMany({
-  //   data: [
-  //     {
-  //       name: 'identity_card_front_side',
-  //       description: 'Parte frontal de la cédula de identidad'
-  //     },
-  //     {
-  //       name: 'identity_card_back_side',
-  //       description: 'Parte posterior de la cédula de identidad'
-  //     },
-  //     {
-  //       name: 'selfie',
-  //       description: 'Fotografía selfie del usuario'
-  //     },
-  //     {
-  //       name: 'identity_card_full',
-  //       description: 'Cédula de identidad completa'
-  //     },
-  //     {
-  //       name: 'camara_comercio',
-  //       description: 'Cámara de comercio'
-  //     },
-  //   ]
-  // });
+  await prisma.documentType.createMany({
+    data: [
+      {
+        name: 'identity_card_front_side',
+        description: 'Parte frontal de la cédula de identidad'
+      },
+      {
+        name: 'identity_card_back_side',
+        description: 'Parte posterior de la cédula de identidad'
+      },
+      {
+        name: 'selfie',
+        description: 'Fotografía selfie del usuario'
+      },
+      {
+        name: 'identity_card_full',
+        description: 'Cédula de identidad completa'
+      },
+      {
+        name: 'camara_comercio',
+        description: 'Cámara de comercio'
+      }
+    ]
+  });
 
-  // await prisma.serviceCategory.createMany({
-  //   data: [
-  //     {
-  //       name: 'Servicio de limpieza',
-  //       slug: 'servicio-de-limpieza'
-  //     },
-  //     {
-  //       name: 'Servicio de plomería',
-  //       slug: 'servicio-de-plomeria'
-  //     },
-  //     {
-  //       name: 'Servicio de electricidad',
-  //       slug: 'servicio-de-electricidad'
-  //     },
-  //     {
-  //       name: 'Servicio de jardinería',
-  //       slug: 'servicio-de-jardineria'
-  //     },
-  //     {
-  //       name: 'Servicio de pintura',
-  //       slug: 'servicio-de-pintura'
-  //     },
-  //     {
-  //       name: 'Servicio de carpintería',
-  //       slug: 'servicio-de-carpinteria'
-  //     }
-  //   ]
-  // });
+  await prisma.serviceCategory.createMany({
+    data: [
+      {
+        name: 'Servicio de limpieza',
+        slug: 'servicio-de-limpieza'
+      },
+      {
+        name: 'Servicio de plomería',
+        slug: 'servicio-de-plomeria'
+      },
+      {
+        name: 'Servicio de electricidad',
+        slug: 'servicio-de-electricidad'
+      },
+      {
+        name: 'Servicio de jardinería',
+        slug: 'servicio-de-jardineria'
+      },
+      {
+        name: 'Servicio de pintura',
+        slug: 'servicio-de-pintura'
+      },
+      {
+        name: 'Servicio de carpintería',
+        slug: 'servicio-de-carpinteria'
+      }
+    ]
+  });
 
   // Seed Payment Methods
   // Verificar si ya existen métodos de pago
@@ -98,28 +98,43 @@ async function main() {
         {
           name: 'Wallet',
           description: 'Saldo de la billetera virtual',
-          code: 'WALLET'
+          code: 'WALLET',
+          is_active: true,
+          is_visible_in_app: false,
+          url_icon: 'https://example.com/wallet-icon.png'
         },
         {
           name: 'Tarjeta de Crédito/Débito',
           description:
             'Pago con tarjeta de crédito o débito (Visa, Mastercard, AmEx)',
-          code: 'CARD'
+          code: 'CARD',
+          is_active: true,
+          is_visible_in_app: true,
+          url_icon: 'https://example.com/card-icon.png'
         },
         {
           name: 'Nequi',
           description: 'Pago a través de la app Nequi',
-          code: 'NEQUI'
+          code: 'NEQUI',
+          is_active: true,
+          is_visible_in_app: true,
+          url_icon: 'https://example.com/nequi-icon.png'
         },
         {
           name: 'PSE',
           description: 'Pago con PSE - Débito desde cuenta bancaria',
-          code: 'PSE'
+          code: 'PSE',
+          is_active: true,
+          is_visible_in_app: true,
+          url_icon: 'https://example.com/pse-icon.png'
         },
         {
           name: 'Bancolombia Transfer',
           description: 'Pago con Botón Bancolombia',
-          code: 'BANCOLOMBIA_TRANSFER'
+          code: 'BANCOLOMBIA_TRANSFER',
+          is_active: true,
+          is_visible_in_app: true,
+          url_icon: 'https://example.com/bancolombia-icon.png'
         }
       ]
     });
