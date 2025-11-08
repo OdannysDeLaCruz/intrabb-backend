@@ -75,7 +75,6 @@ export class AuthController {
       files
     };
 
-    // return await this.authService.CreateIntrabblerFromWebsite(registrationData)
-    return registrationData
+    return await this.authService.CreateIntrabblerFromWebsite(registrationData)
   }
 }
