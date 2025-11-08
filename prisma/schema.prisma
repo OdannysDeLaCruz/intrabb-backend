@@ -364,7 +364,7 @@ model IntrabblerProfile {
 model VerifiableDocument {
   id                    Int @id @default(autoincrement())
   intrabbler_profile_id Int
-  document_type_id      Int @unique 
+  document_type_id      Int
   document_url          String         
   status                DocumentStatus @default(Pending)
   rejection_reason      String?        

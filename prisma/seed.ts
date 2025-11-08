@@ -25,6 +25,7 @@ async function main() {
         name: 'admin',
         lastname: 'admin',
         phone_number: '+573000000000',
+        document_number: '',
         email: 'admin@intrabb.com',
         password_hash: 'admin',
         username: 'admin',
