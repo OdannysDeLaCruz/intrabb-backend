@@ -319,6 +319,7 @@ export class AuthService {
           role_id: this.role_professional_id,
           name: data.nombre,
           lastname: data.apellido,
+          document_number: data.tipoRegistro === 'independiente' ? data.cedula : data.nit,
           wallet: {
             create: {}
           },
@@ -326,17 +327,38 @@ export class AuthService {
             create: {
               profession: data.profesion,
               bio: data.biografia,
-              is_approved: false
+              is_approved: false,
+              is_company: data.tipoRegistro === 'empresa'
             }
           }
         },
-        // include: this.getIncludeConfig("aliados")
         include: {
           intrabbler_profile: true
         }
       });
 
       console.log('Usuario creado:', newUser.id);
+
+      // PASO 1.5: Guardar servicios prestados por el aliado
+      if (newUser.intrabbler_profile && serviciosArray.length > 0) {
+        try {
+          // Crear registros de servicios ofrecidos
+          await Promise.all(
+            serviciosArray.map((servicioId: string | number) =>
+              this.prisma.professionalServicesOffered.create({
+                data: {
+                  intrabbler_profile_id: newUser.intrabbler_profile.id,
+                  service_category_id: parseInt(servicioId.toString())
+                }
+              })
+            )
+          );
+          console.log(`${serviciosArray.length} servicios guardados para el aliado:`, newUser.id);
+        } catch (error) {
+          console.error('Error guardando servicios prestados:', error);
+          // No lanzar error aquí, permitir que continúe el registro
+        }
+      }
 
       // PASO 2: Subir foto de perfil y actualizar usuario
       if (fotoPerfil) {
