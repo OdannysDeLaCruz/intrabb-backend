@@ -287,11 +287,29 @@ export class AuthService {
         if (!data.cedula) {
           throw new BadRequestException('La cédula es obligatoria');
         }
+
+        // Validar que la cédula no exista
+        const existingUser = await this.prisma.user.findUnique({
+          where: { document_number: data.cedula }
+        });
+
+        if (existingUser) {
+          throw new BadRequestException('La cédula ya está en uso');
+        }
       }
 
       if (data.tipoRegistro === 'empresa') {
         if (!data.nit) {
           throw new BadRequestException('El NIT es obligatorio');
+        }
+
+        // Validar que el NIT no exista
+        const existingUser = await this.prisma.user.findUnique({
+          where: { document_number: data.nit }
+        });
+
+        if (existingUser) {
+          throw new BadRequestException('El NIT ya está en uso');
         }
       }
 
@@ -310,115 +328,143 @@ export class AuthService {
 
       console.log('Archivos:', { fotoPerfil, fotoCedula, camaraComercio });
 
-      // PASO 1: Crear usuario
       const userId = uuidv4();
-      const newUser = await this.prisma.user.create({
-        data: {
-          id: userId,
-          phone_number: data.telefono,
-          role_id: this.role_professional_id,
-          name: data.nombre,
-          lastname: data.apellido,
-          document_number: data.tipoRegistro === 'independiente' ? data.cedula : data.nit,
-          wallet: {
-            create: {}
-          },
-          intrabbler_profile: {
-            create: {
-              profession: data.profesion,
-              bio: data.biografia,
-              is_approved: false,
-              is_company: data.tipoRegistro === 'empresa'
-            }
+      let documentTypeId: number | null = null;
+
+      // PASO 1: TRANSACCIÓN - Crear usuario y datos relacionados en BD
+      const newUser = await this.prisma.$transaction(async (prisma) => {
+        // Buscar document type si es necesario (dentro de la transacción)
+        if (data.tipoRegistro === 'independiente' && fotoCedula) {
+          const docType = await prisma.documentType.findUnique({
+            where: { name: 'identity_card_full' }
+          });
+          if (docType) {
+            documentTypeId = docType.id;
           }
-        },
-        include: {
-          intrabbler_profile: true
+        } else if (data.tipoRegistro === 'empresa' && camaraComercio) {
+          const docType = await prisma.documentType.findUnique({
+            where: { name: 'camara_comercio' }
+          });
+          if (docType) {
+            documentTypeId = docType.id;
+          }
         }
-      });
 
-      console.log('Usuario creado:', newUser.id);
+        // Crear usuario con wallet e intrabbler_profile
+        const createdUser = await prisma.user.create({
+          data: {
+            id: userId,
+            phone_number: data.telefono,
+            role_id: this.role_professional_id,
+            name: data.nombre,
+            lastname: data.apellido,
+            document_number: data.tipoRegistro === 'independiente' ? data.cedula : data.nit,
+            wallet: {
+              create: {}
+            },
+            intrabbler_profile: {
+              create: {
+                profession: data.profesion,
+                bio: data.biografia,
+                is_approved: false,
+                is_company: data.tipoRegistro === 'empresa'
+              }
+            }
+          },
+          include: {
+            intrabbler_profile: true
+          }
+        });
 
-      // PASO 1.5: Guardar servicios prestados por el aliado
-      if (newUser.intrabbler_profile && serviciosArray.length > 0) {
-        try {
-          // Crear registros de servicios ofrecidos
+        console.log('Usuario creado en transacción:', createdUser.id);
+
+        // Guardar servicios prestados por el aliado dentro de la transacción
+        if (createdUser.intrabbler_profile && serviciosArray.length > 0) {
           await Promise.all(
             serviciosArray.map((servicioId: string | number) =>
-              this.prisma.professionalServicesOffered.create({
+              prisma.professionalServicesOffered.create({
                 data: {
-                  intrabbler_profile_id: newUser.intrabbler_profile.id,
+                  intrabbler_profile_id: createdUser.intrabbler_profile.id,
                   service_category_id: parseInt(servicioId.toString())
                 }
               })
             )
           );
-          console.log(`${serviciosArray.length} servicios guardados para el aliado:`, newUser.id);
-        } catch (error) {
-          console.error('Error guardando servicios prestados:', error);
-          // No lanzar error aquí, permitir que continúe el registro
+          console.log(`${serviciosArray.length} servicios guardados en transacción para el aliado:`, createdUser.id);
         }
-      }
 
-      // PASO 2: Subir foto de perfil y actualizar usuario
+        return createdUser;
+      });
+
+      // PASO 2: Subir archivos a Cloudinary DESPUÉS de confirmar que la transacción fue exitosa
+      let fotoPerfilUrl: string | null = null;
+      let documentUrl: string | null = null;
+
       if (fotoPerfil) {
         try {
-          const fotoPerfilUrl = await this.cloudinaryService.uploadFile(fotoPerfil, 'intrabb/profiles');
-          await this.prisma.user.update({
-            where: { id: userId },
-            data: { photo_url: fotoPerfilUrl }
-          });
-          console.log('Foto de perfil guardada:', fotoPerfilUrl);
+          fotoPerfilUrl = await this.cloudinaryService.uploadFile(fotoPerfil, 'intrabb/profiles');
+          console.log('Foto de perfil cargada en Cloudinary:', fotoPerfilUrl);
         } catch (error) {
           console.error('Error subiendo foto de perfil:', error);
+          // Continuar sin foto de perfil, no cortar la función
         }
       }
 
-      // PASO 3: Guardar documento verificable (cédula o cámara de comercio)
-      try {
-        let documentType: any;
-        let documentFile: Express.Multer.File;
-
-        if (data.tipoRegistro === 'independiente' && fotoCedula) {
-          // Buscar document type para cédula
-          documentType = await this.prisma.documentType.findUnique({
-            where: { name: 'identify_card_full' }
-          });
-          documentFile = fotoCedula;
-        } else if (data.tipoRegistro === 'empresa' && camaraComercio) {
-          // Buscar document type para cámara de comercio
-          documentType = await this.prisma.documentType.findUnique({
-            where: { name: 'camara_comercio' }
-          });
-          documentFile = camaraComercio;
+      if ((data.tipoRegistro === 'independiente' && fotoCedula) || (data.tipoRegistro === 'empresa' && camaraComercio)) {
+        try {
+          const fileToUpload = data.tipoRegistro === 'independiente' ? fotoCedula : camaraComercio;
+          documentUrl = await this.cloudinaryService.uploadFile(fileToUpload, 'intrabb/documents');
+          console.log('Documento cargado en Cloudinary:', documentUrl);
+        } catch (error) {
+          console.error('Error subiendo documento:', error);
+          // Continuar sin documento, no cortar la función
         }
+      }
 
-        if (documentType && documentFile && newUser.intrabbler_profile) {
-          // Subir documento a Cloudinary
-          const documentUrl = await this.cloudinaryService.uploadFile(documentFile, 'intrabb/documents');
+      // PASO 3: Actualizar foto de perfil si se subió exitosamente
+      if (fotoPerfilUrl) {
+        await this.prisma.user.update({
+          where: { id: userId },
+          data: { photo_url: fotoPerfilUrl }
+        });
+        console.log('URL de foto actualizada en usuario');
+      }
 
-          // Crear registro en verifiable_documents
-          // Nota: reviewed_by_id es requerido, usamos el usuario creado
-          await this.prisma.verifiableDocument.create({
-            data: {
-              intrabbler_profile_id: newUser.intrabbler_profile.id,
-              document_type_id: documentType.id,
-              document_url: documentUrl,
-              reviewed_by_id: userId, // Temporalmente el mismo usuario, se revisará después
-              status: 'Pending'
+      // PASO 4: Crear documento verificable con URL (obligatoria)
+      if (documentUrl && newUser.intrabbler_profile && documentTypeId) {
+        await this.prisma.verifiableDocument.create({
+          data: {
+            intrabbler_profile_id: newUser.intrabbler_profile.id,
+            document_type_id: documentTypeId,
+            document_url: documentUrl,
+            reviewed_by_id: userId,
+            status: 'Pending'
+          }
+        });
+        console.log('Documento verificable creado con URL en base de datos');
+      }
+
+      // Obtener usuario actualizado con todas las relaciones
+      await this.prisma.user.findUnique({
+        where: { id: userId },
+        include: {
+          intrabbler_profile: {
+            include: {
+              verifiable_documents: {
+                include: {
+                  document_type: true
+                }
+              }
             }
-          });
-
-          console.log('Documento verificable guardado para:', documentType.name);
+          },
+          wallet: true,
+          role: true
         }
-      } catch (error) {
-        console.error('Error guardando documento verificable:', error);
-      }
+      });
 
       return {
         success: true,
         message: 'Usuario registrado correctamente',
-        user: newUser
       };
     } catch (error) {
       console.error('Error in signUpFromWebsite:', error);
