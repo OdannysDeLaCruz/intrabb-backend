@@ -52,7 +52,13 @@ export class AuthController {
       { name: 'fotoPerfil', maxCount: 1 },
       { name: 'fotoCedula', maxCount: 1 },
       { name: 'camaraComercio', maxCount: 1 }
-    ])
+    ],
+    {
+      limits: {
+        fileSize: 1024 * 1024 * 5 // 5MB limit
+      }
+    }
+    )
   )
   async createIntrabblerFromWebsite(
     @Body() body: any,
@@ -69,6 +75,7 @@ export class AuthController {
       files
     };
 
-    return await this.authService.CreateIntrabblerFromWebsite(registrationData)
+    // return await this.authService.CreateIntrabblerFromWebsite(registrationData)
+    return registrationData
   }
 }
