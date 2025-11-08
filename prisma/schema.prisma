@@ -249,6 +249,7 @@ model User {
   name                      String?
   lastname                  String?
   phone_number              String @unique
+  document_number           String? @unique
   email                     String?
   gender                    Gender?
   password_hash             String?
