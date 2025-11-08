@@ -7,6 +7,7 @@ import morgan from 'morgan';
 // import { json } from 'express';
 import express from 'express';
 import { AppModule } from './app.module';
+import { MulterExceptionFilter } from './common/filters/multer-exception.filter';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
@@ -36,6 +37,7 @@ async function bootstrap() {
   })
 );
   app.use(express.json());
+
   // Use Winston logger
   app.useLogger(app.get(WINSTON_MODULE_NEST_PROVIDER));
   app.enableCors({
@@ -63,6 +65,9 @@ async function bootstrap() {
       transform: true
     })
   );
+
+  // Global Exception Filter para multer
+  app.useGlobalFilters(new MulterExceptionFilter());
 
   // Configuración de Swagger
   const config = new DocumentBuilder()

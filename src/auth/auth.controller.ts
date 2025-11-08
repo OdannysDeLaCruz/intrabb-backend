@@ -56,6 +56,16 @@ export class AuthController {
     {
       limits: {
         fileSize: 1024 * 1024 * 5 // 5MB limit
+      },
+      fileFilter: (req: any, file, callback) => {
+        // Guardar información del archivo en el request para acceder en caso de error
+        if (!req.uploadedFileInfo) {
+          req.uploadedFileInfo = {};
+        }
+        req.uploadedFileInfo[file.fieldname] = {
+          originalname: file.originalname
+        };
+        callback(null, true);
       }
     }
     )
