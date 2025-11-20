@@ -34,14 +34,14 @@ export class VerifiableDocumentsService {
       const docType = await this.prisma.documentType.findFirst({
         where: { name: documentType },
       });
-
+console.log('DOC TYPE', docType);
       if (!docType) {
         return [];
       }
 
       whereClause.document_type_id = docType.id;
     }
-
+console.log('WHERE CLAUSE', whereClause);
     return this.prisma.verifiableDocument.findMany({
       where: whereClause,
       include: {

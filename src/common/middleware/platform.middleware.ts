@@ -50,7 +50,7 @@ export class PlatformMiddleware implements NestMiddleware {
       });
     }
 
-    console.log('platform Ok', platform);
+    // console.log('platform Ok', platform);
     req.platform = platform;
     next();
   }

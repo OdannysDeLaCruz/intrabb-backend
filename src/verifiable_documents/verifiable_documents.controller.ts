@@ -177,7 +177,7 @@ export class VerifiableDocumentsController {
         return;
       }
 
-      console.log('User found:', user.name, user.lastname);
+      // console.log('User found:', user.name, user.lastname);
 
       // 5. Verificar si viene el atributo decision
       if (!data.decision) {

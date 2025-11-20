@@ -8,7 +8,7 @@ export class DeviceTokensService {
 
   async registerDeviceToken(userId: string, dto: CreateDeviceTokenDto) {
     try {
-      // Check if token already exists for this user
+      // Check if this user already has this token registered
       const existingToken = await this.prisma.deviceToken.findFirst({
         where: {
           user_id: userId,
@@ -17,7 +17,7 @@ export class DeviceTokensService {
       });
 
       if (existingToken) {
-        // Update existing token
+        // Update existing token for this user
         return await this.prisma.deviceToken.update({
           where: { id: existingToken.id },
           data: {
@@ -29,7 +29,8 @@ export class DeviceTokensService {
         });
       }
 
-      // Create new token
+      // Create new token for this user
+      // (Same token can exist for other users - they're separate accounts)
       return await this.prisma.deviceToken.create({
         data: {
           user_id: userId,
@@ -40,8 +41,10 @@ export class DeviceTokensService {
         },
       });
     } catch (error) {
+      console.log(error);
       if (error.code === 'P2002') {
-        throw new ConflictException('Device token already exists');
+        // This should not happen now with the updated schema
+        throw new ConflictException('Device token already exists for this user');
       }
       throw error;
     }

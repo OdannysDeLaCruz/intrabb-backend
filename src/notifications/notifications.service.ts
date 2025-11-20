@@ -215,15 +215,15 @@ export class NotificationsService {
       }
     });
 
-    // Desactivar tokens inválidos
+    // Desactivar tokens inválidos (puede haber múltiples usuarios con el mismo token)
     for (const token of failedTokens) {
       try {
-        await this.prisma.deviceToken.update({
+        const result = await this.prisma.deviceToken.updateMany({
           where: { fcm_token: token },
           data: { is_active: false },
         });
 
-        this.logger.log(`🗑️ Deactivated invalid token: ${token.substring(0, 20)}...`);
+        this.logger.log(`🗑️ Deactivated ${result.count} invalid token(s): ${token.substring(0, 20)}...`);
       } catch (error) {
         this.logger.error(`Error deactivating token: ${error.message}`);
       }

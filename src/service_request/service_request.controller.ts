@@ -158,7 +158,7 @@ export class ServiceRequestController {
         );
       }
 
-      console.log("SERVICE REQUEST - BACKEND", serviceRequest);
+      // console.log("SERVICE REQUEST - BACKEND", serviceRequest);
       return {
         success: true,
         data: serviceRequest

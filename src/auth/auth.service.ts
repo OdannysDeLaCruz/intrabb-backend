@@ -3,9 +3,10 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { PLATFORM_CLIENT } from 'src/constants';
-import { v4 as uuidv4 } from 'uuid';
 import { SignUpFromWebsiteInterface } from './interfaces/signUpFromWebsite.interface';
 import { CloudinaryService } from 'src/common/services/cloudinary.service';
+import { SupabaseAuthService } from './supabase-auth.service';
+import { InformationSource } from '@prisma/client';
 
 @Injectable()
 export class AuthService {
@@ -14,7 +15,8 @@ export class AuthService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly cloudinaryService: CloudinaryService
+    private readonly cloudinaryService: CloudinaryService,
+    private readonly supabaseAuthService: SupabaseAuthService
   ) {}
   
   async getUserByPhone(phone: string) {
@@ -25,7 +27,7 @@ export class AuthService {
       },
       include: includeConfig
     })
-    console.log('user', user)
+    // console.log('user', user)
     return { user }
   }
 
@@ -116,6 +118,10 @@ export class AuthService {
           }
         }
       case 'client':
+        return {
+          ...baseIncludes,
+          addresses: true
+        }
       default:
         return baseIncludes
     }
@@ -140,7 +146,7 @@ export class AuthService {
 
   async signUpOrSignIn(createUserDto: CreateUserDto, platform?: string) {
     try {
-      console.log('signUpOrSignIn', createUserDto, 'platform:', platform)
+      // console.log('signUpOrSignIn', createUserDto, 'platform:', platform)
       // Verificar si existe el phone_number
       const { user } = await this.getUserByPhone(createUserDto.phone_number)
       // console.log('user::', user)
@@ -241,26 +247,11 @@ export class AuthService {
 
   async CreateIntrabblerFromWebsite(data: SignUpFromWebsiteInterface) {
     try {
-      console.log('signUpFromWebsite received:', {
-        tipoRegistro: data.tipoRegistro,
-        telefono: data.telefono,
-        nombre: data.nombre,
-        apellido: data.apellido,
-        profesion: data.profesion,
-        cedula: data.cedula,
-        nit: data.nit,
-        biografia: data.biografia,
-        servicios: data.servicios,
-        files: data.files
-      });
-
       // Parse servicios if it's a string (JSON)
       let serviciosArray = data.servicios;
       if (typeof data.servicios === 'string') {
         serviciosArray = JSON.parse(data.servicios);
       }
-
-      console.log('Parsed servicios:', serviciosArray);
 
       // Validación de datos
       if (!data.tipoRegistro) {
@@ -326,9 +317,26 @@ export class AuthService {
       const fotoCedula = data.files?.fotoCedula?.[0];
       const camaraComercio = data.files?.camaraComercio?.[0];
 
-      console.log('Archivos:', { fotoPerfil, fotoCedula, camaraComercio });
+      // PASO 0: CREAR USUARIO EN SUPABASE (sin OTP)
+      console.log('Creando usuario en Supabase con teléfono:', data.telefono);
+      let supabaseUser;
+      try {
+        supabaseUser = await this.supabaseAuthService.createUserWithoutOtp({
+          phone: data.telefono,
+          email: '',
+          user_metadata: {
+            nombre: data.nombre,
+            apellido: data.apellido,
+            profesion: data.profesion,
+            tipoRegistro: data.tipoRegistro,
+          }
+        });
+      } catch (error) {
+        console.error('Error creando usuario en Supabase:', error);
+        throw new BadRequestException(`No se pudo crear el usuario en Supabase: ${error.message}`);
+      }
 
-      const userId = uuidv4();
+      const userId = supabaseUser.id;
       let documentTypeId: number | null = null;
 
       // PASO 1: TRANSACCIÓN - Crear usuario y datos relacionados en BD
@@ -336,7 +344,7 @@ export class AuthService {
         // Buscar document type si es necesario (dentro de la transacción)
         if (data.tipoRegistro === 'independiente' && fotoCedula) {
           const docType = await prisma.documentType.findUnique({
-            where: { name: 'identity_card_full' }
+            where: { name: 'identity_card_front_side' }
           });
           if (docType) {
             documentTypeId = docType.id;
@@ -358,7 +366,9 @@ export class AuthService {
             role_id: this.role_professional_id,
             name: data.nombre,
             lastname: data.apellido,
+            is_active: true,
             document_number: data.tipoRegistro === 'independiente' ? data.cedula : data.nit,
+            information_source: InformationSource.web,
             wallet: {
               create: {}
             },
@@ -443,24 +453,6 @@ export class AuthService {
         });
         console.log('Documento verificable creado con URL en base de datos');
       }
-
-      // Obtener usuario actualizado con todas las relaciones
-      await this.prisma.user.findUnique({
-        where: { id: userId },
-        include: {
-          intrabbler_profile: {
-            include: {
-              verifiable_documents: {
-                include: {
-                  document_type: true
-                }
-              }
-            }
-          },
-          wallet: true,
-          role: true
-        }
-      });
 
       return {
         success: true,

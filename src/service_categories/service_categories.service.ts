@@ -434,6 +434,7 @@ export class ServiceCategoriesService {
         _count: {
           select: {
             service_requests: true,
+            children: true,
           },
         },
       },

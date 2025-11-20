@@ -17,13 +17,13 @@ export class AuthController {
   @SkipPlatform()
   async phoneExists(@Body() body: { phone: string }) {
     const { user } = await this.authService.getUserByPhone(body.phone)
-    console.log('exist user', user)
+    // console.log('exist user', user)
     return { exists: user ? true : false }
   }
 
   @Post('sign-up')
   async signUp(@Body() body: CreateUserDto, @Req() req: RequestWithPlatform) {
-    console.log('SIGN UP', body)
+    // console.log('SIGN UP', body)
     try {
       return await this.authService.signUpOrSignIn(body, req.platform)
     } catch (error) {
@@ -78,7 +78,7 @@ export class AuthController {
       camaraComercio?: Express.Multer.File[];
     }
   ) {
-    console.log('SIGN UP FROM WEBSITE', body)
+    // console.log('SIGN UP FROM WEBSITE', body)
     // Combine body and files into a single object
     const registrationData = {
       ...body,

@@ -51,7 +51,7 @@ export class PlatformGuard implements CanActivate {
       });
     }
 
-    console.log('platform Ok', platform);
+    // console.log('platform Ok', platform);
     request.platform = platform;
 
     return true;
