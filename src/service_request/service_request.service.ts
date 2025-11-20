@@ -111,7 +111,7 @@ export class ServiceRequestService {
   }
 
   async create(createServiceRequestDto: CreateServiceRequestDto): Promise<ServiceRequest> {
-    const { parameters, initial_budget, ...serviceRequestData } = createServiceRequestDto;
+    const { parameters, initial_budget, category_path, ...serviceRequestData } = createServiceRequestDto;
 
     // Validate preferred_date if provided
     if (serviceRequestData.preferred_date) {
@@ -162,10 +162,11 @@ export class ServiceRequestService {
       const serviceRequest = await prisma.serviceRequest.create({
         data: {
           ...serviceRequestData,
-          preferred_date: serviceRequestData.preferred_date 
-            ? new Date(serviceRequestData.preferred_date) 
+          preferred_date: serviceRequestData.preferred_date
+            ? new Date(serviceRequestData.preferred_date)
             : undefined,
           initial_budget_id: initialBudgetId,
+          category_path: category_path,
           parameters: parameters ? {
             create: parameters.map(param => ({
               category_parameter_id: param.category_parameter_id,
@@ -286,11 +287,11 @@ export class ServiceRequestService {
         },
       });
 
-      console.log('🔍 DEBUG - Aliados encontrados:', aliados.map(a => ({ id: a.id, name: `${a.name} ${a.lastname}` })));
+      // console.log('🔍 DEBUG - Aliados encontrados:', aliados.map(a => ({ id: a.id, name: `${a.name} ${a.lastname}` })));
 
       // DEBUG: También verificar todos los roles
-      const allRoles = await this.prisma.role.findMany();
-      console.log('🔍 DEBUG - Todos los roles:', allRoles);
+      // const allRoles = await this.prisma.role.findMany();
+      // console.log('🔍 DEBUG - Todos los roles:', allRoles);
 
       if (aliados.length === 0) {
         console.log('⚠️ No hay aliados activos para notificar');
@@ -298,20 +299,24 @@ export class ServiceRequestService {
       }
 
       // Preparar payload de notificación para Push
+      console.log('serviceRequest.service_category', serviceRequest.service_category)
+      const notificationBody = serviceRequest.service_category?.name || ''
+      console.log('notificationBody', notificationBody)
+      // const notificationDescription = serviceRequest.description ? ` : ${serviceRequest.description}` : ''
       const notificationPayload = {
         title: 'Nueva Oportunidad de Trabajo',
-        body: `${serviceRequest.service_category?.name}: ${serviceRequest.description}`,
+        body: notificationBody,
         data: {
           type: 'nueva_oportunidad',
           service_request_id: serviceRequest.id.toString(),
-          service_category: serviceRequest.service_category?.name || '',
+          service_category: notificationBody,
           client_name: serviceRequest.client ? `${serviceRequest.client.name} ${serviceRequest.client.lastname}`.trim() : '',
           location: serviceRequest.location?.city || '',
           created_at: serviceRequest.created_at?.toISOString() || '',
         },
         imageUrl: serviceRequest.images?.[0]?.image_url, // Primera imagen si existe
       };
-      console.log('🔍 DEBUG - Payload de notificación PUSH:', notificationPayload);
+      // console.log('🔍 DEBUG - Payload de notificación PUSH:', notificationPayload);
 
       // Preparar datos para WebSocket (formato original)
       const websocketData = {
@@ -337,7 +342,7 @@ export class ServiceRequestService {
         initial_budget: serviceRequest.initial_budget,
       };
 
-      console.log('🔍 DEBUG - Datos para WebSocket:', websocketData);
+      // console.log('🔍 DEBUG - Datos para WebSocket:', websocketData);
 
       // Enviar notificaciones híbridas (WebSocket + Push) a todos los aliados
       let successCount = 0;
@@ -351,7 +356,7 @@ export class ServiceRequestService {
             notificationPayload,
             {
               priority: 'high',
-              websocketCallback: async (userId, event, data) => {
+              websocketCallback: async (userId) => {
                 // Usar los datos originales de WebSocket
                 return await this.appGateway.notifyAliado(userId, 'nueva_oportunidad_para_ti', websocketData);
               },
@@ -517,6 +522,7 @@ export class ServiceRequestService {
                 lastname: true,
                 phone_number: true,
                 email: true,
+                photo_url: true
               }
             },
             estimated_price: true,
