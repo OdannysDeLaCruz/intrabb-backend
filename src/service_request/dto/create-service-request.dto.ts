@@ -69,7 +69,6 @@ export class CreateServiceRequestDto {
   service_category_id: number;
 
   @IsString()
-  @IsNotEmpty()
   title: string;
 
   @IsInt()
@@ -101,4 +100,8 @@ export class CreateServiceRequestDto {
   @ValidateNested({ each: true })
   @Type(() => CreateServiceRequestImageDto)
   images?: CreateServiceRequestImageDto[];
+
+  @IsOptional()
+  @IsString()
+  category_path?: string;
 }

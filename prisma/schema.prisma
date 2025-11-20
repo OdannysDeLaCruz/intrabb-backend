@@ -243,6 +243,13 @@ model DocumentType {
   @@map("document_types")
 }
 
+enum InformationSource {
+  app
+  web
+
+  @@map("information_source")
+}
+
 model User {
   id                        String @id @db.Uuid
   role_id                   Int
@@ -258,6 +265,7 @@ model User {
   is_online                 Boolean @default(false)
   last_login                DateTime?
   photo_url                 String?
+  information_source        InformationSource? @default(app)
   created_at                DateTime @default(now())
   updated_at                DateTime @updatedAt
 
@@ -420,24 +428,27 @@ model ServiceCategory {
 model ServiceRequest {
   id                      Int @id @default(autoincrement())
   client_id               String @db.Uuid // debe tener role='client'
-  service_category_id     Int                  
-  title                   String
+  service_category_id     Int
+  title                   String?
   location_address_id     Int?              // Opcional para fixed_price inicialmente
   description             String?
-  preferred_date          DateTime?   
+  preferred_date          DateTime?
   status                  ServiceRequestStatus @default(receiving_offers)
   accepted_counter_offer_id Int? @unique // referencia a la contra oferta aceptada
   initial_budget_id       Int? @unique // referencia al presupuesto inicial del cliente
   is_active               Boolean @default(true)
-  
+
   // Nuevo campo para distinguir tipos de servicio
   request_type            RequestType @default(quotation_based) // quotation_based, fixed_price
-  
+
   // Campos específicos para fixed_price
   amount                  Decimal?         // Monto del servicio de precio fijo
   currency                String @default("COP") // Moneda del servicio
-  
-  created_at              DateTime @default(now()) 
+
+  // Ruta de categorías seleccionadas
+  category_path           String?          // Ej: "Servicios / Reparaciones / Reparación de Celulares / Pantalla Rota"
+
+  created_at              DateTime @default(now())
   updated_at              DateTime @updatedAt
 
   client                  User @relation(fields: [client_id], references: [id])
@@ -871,7 +882,7 @@ model CommissionSettings {
 model DeviceToken {
   id            Int       @id @default(autoincrement())
   user_id       String    @db.Uuid
-  fcm_token     String    @unique
+  fcm_token     String
   expo_token    String?
   platform      String    @default("unknown")
   device_id     String?
@@ -885,7 +896,9 @@ model DeviceToken {
   user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
 
   // Índices
+  @@unique([user_id, fcm_token])
   @@index([user_id])
+  @@index([fcm_token])
   @@index([is_active])
   @@map("device_tokens")
 }
