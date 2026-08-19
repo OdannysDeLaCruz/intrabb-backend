@@ -430,6 +430,7 @@ export class QuotationsService {
           }
         },
         estimated_price: true,
+        service_appointment: true,
       }
     });
 
